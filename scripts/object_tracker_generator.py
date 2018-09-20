@@ -1011,11 +1011,13 @@ class ObjectTrackerOutputGenerator(OutputGenerator):
             # Use correct dispatch table
             disp_name = cmdinfo.elem.find('param/name').text
             disp_type = cmdinfo.elem.find('param/type').text
+            map_type = ''
             if disp_type in ["VkInstance", "VkPhysicalDevice"] or cmdname == 'vkCreateInstance':
                 object_type = 'instance'
+                map_type = 'instance_'
             else:
                 object_type = 'device'
-            dispatch_table = 'GetLayerDataPtr(get_dispatch_key(%s), layer_data_map)->%s_dispatch_table.' % (disp_name, object_type)
+            dispatch_table = 'GetLayerDataPtr(get_dispatch_key(%s), %slayer_data_map)->%s_dispatch_table.' % (disp_name, map_type, object_type)
             down_chain_call = fcn_call.replace('TOKEN', dispatch_table, 1)
             self.appendSection('command', '    ' + assignresult + down_chain_call)
 
