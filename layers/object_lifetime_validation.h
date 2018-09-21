@@ -30,83 +30,33 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "vk_loader_platform.h"
 #include "vulkan/vulkan.h"
-#include "vk_layer_config.h"
-#include "vk_layer_data.h"
-#include "vk_layer_logging.h"
 #include "vk_object_types.h"
-#include "vulkan/vk_layer.h"
-#include "vk_enum_string_helper.h"
-#include "vk_layer_extension_utils.h"
-#include "vk_layer_utils.h"
-#include "vulkan/vk_layer.h"
-#include "vk_dispatch_table_helper.h"
-#include "vk_validation_error_messages.h"
-#include "vk_extension_helper.h"
+#include "vk_layer_logging.h"
 #include "object_lifetimes.h"
-
-
 
 namespace object_tracker {
 
-struct layer_data;
-struct instance_layer_data;
+#include "precall.h"
+#include "postcall.h"
 
-extern std::unordered_map<void *, layer_data *> layer_data_map;
-extern std::unordered_map<void *, instance_layer_data *> instance_layer_data_map;
-extern std::mutex global_lock;
-extern uint32_t loader_layer_if_version;
-extern const std::unordered_map<std::string, void *> name_to_funcptr_map;
+// Suppress unused warning on Linux
+#if defined(__GNUC__)
+#define DECORATE_UNUSED __attribute__((unused))
+#else
+#define DECORATE_UNUSED
+#endif
 
-struct instance_layer_data {
-    object_lifetime objdata;
-    VkInstance instance;
+// clang-format off
+static const char DECORATE_UNUSED *kVUID_ObjectTracker_Info = "UNASSIGNED-ObjectTracker-Info";
+static const char DECORATE_UNUSED *kVUID_ObjectTracker_InternalError = "UNASSIGNED-ObjectTracker-InternalError";
+static const char DECORATE_UNUSED *kVUID_ObjectTracker_ObjectLeak =    "UNASSIGNED-ObjectTracker-ObjectLeak";
+static const char DECORATE_UNUSED *kVUID_ObjectTracker_UnknownObject = "UNASSIGNED-ObjectTracker-UnknownObject";
+// clang-format on
 
-    debug_report_data *report_data;
-    std::vector<VkDebugReportCallbackEXT> logging_callback;
-    std::vector<VkDebugUtilsMessengerEXT> logging_messenger;
-    // The following are for keeping track of the temporary callbacks that can be used in vkCreateInstance and vkDestroyInstance
-    uint32_t num_tmp_report_callbacks;
-    VkDebugReportCallbackCreateInfoEXT *tmp_report_create_infos;
-    VkDebugReportCallbackEXT *tmp_report_callbacks;
-    uint32_t num_tmp_debug_messengers;
-    VkDebugUtilsMessengerCreateInfoEXT *tmp_messenger_create_infos;
-    VkDebugUtilsMessengerEXT *tmp_debug_messengers;
-    VkLayerInstanceDispatchTable instance_dispatch_table;
+#undef DECORATE_UNUSED
 
-    // Default constructor
-    instance_layer_data()
-        : report_data(nullptr),
-          num_tmp_report_callbacks(0),
-          tmp_report_create_infos(nullptr),
-          tmp_report_callbacks(nullptr),
-          num_tmp_debug_messengers(0),
-          tmp_messenger_create_infos(nullptr),
-          tmp_debug_messengers(nullptr),
-          instance_dispatch_table{} {}
-};
-
-struct layer_data {
-    object_lifetime objdata;
-
-    std::unordered_set<std::string> device_extension_set;
-    debug_report_data *report_data;
-    VkLayerDispatchTable device_dispatch_table;
-
-    instance_layer_data *instance_data;
-    VkPhysicalDevice physical_device;
-
-    // Default constructor
-    layer_data() : instance_data(nullptr), physical_device(nullptr), report_data(nullptr), device_dispatch_table{} {}
-};
-
-extern std::unordered_map<void *, layer_data *> layer_data_map;
-extern std::unordered_map<void *, instance_layer_data *> instance_layer_data_map;
-extern std::mutex global_lock;
 extern uint64_t object_track_index;
-extern uint32_t loader_layer_if_version;
-extern std::unordered_map<std::string, void *> name_to_funcptr_map;
 
 bool DeviceReportUndestroyedObjects(VkDevice device, VulkanObjectType object_type, const std::string &error_code);
 void DeviceDestroyUndestroyedObjects(VkDevice device, VulkanObjectType object_type);
@@ -187,17 +137,17 @@ bool DeviceValidateObject(T1 dispatchable_object, T2 object, VulkanObjectType ob
             for (auto other_device_data : layer_data_map) {
                 if (other_device_data.second != device_data) {
                     if (other_device_data.second->objdata.object_map[object_type].find(object_handle) !=
-                        other_device_data.second->objdata.object_map[object_type].end() ||
+                            other_device_data.second->objdata.object_map[object_type].end() ||
                         (object_type == kVulkanObjectTypeImage &&
-                            other_device_data.second->objdata.swapchainImageMap.find(object_handle) !=
-                            other_device_data.second->objdata.swapchainImageMap.end())) {
+                         other_device_data.second->objdata.swapchainImageMap.find(object_handle) !=
+                             other_device_data.second->objdata.swapchainImageMap.end())) {
                         // Object found on other device, report an error if object has a device parent error code
                         if ((wrong_device_code != kVUIDUndefined) && (object_type != kVulkanObjectTypeSurfaceKHR)) {
                             return log_msg(device_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, debug_object_type,
-                                object_handle, wrong_device_code,
-                                "Object 0x%" PRIxLEAST64
-                                " was not created, allocated or retrieved from the correct device.",
-                                object_handle);
+                                           object_handle, wrong_device_code,
+                                           "Object 0x%" PRIxLEAST64
+                                           " was not created, allocated or retrieved from the correct device.",
+                                           object_handle);
                         } else {
                             return false;
                         }
@@ -206,15 +156,11 @@ bool DeviceValidateObject(T1 dispatchable_object, T2 object, VulkanObjectType ob
             }
             // Report an error if object was not found anywhere
             return log_msg(device_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, debug_object_type, object_handle,
-                invalid_handle_code, "Invalid %s Object 0x%" PRIxLEAST64 ".", object_string[object_type], object_handle);
+                           invalid_handle_code, "Invalid %s Object 0x%" PRIxLEAST64 ".", object_string[object_type], object_handle);
         }
     }
     return false;
 }
-
-
-
-
 
 static void InsertObjectInMap(uint64_t object_handle, VulkanObjectType object_type, object_lifetime *obj_data,
                               debug_report_data *report_data, bool custom_allocator) {
