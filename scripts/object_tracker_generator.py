@@ -416,6 +416,7 @@ class ObjectTrackerOutputGenerator(OutputGenerator):
         # Namespace
         self.newline()
         write('#include "object_tracker.h"', file = self.outFile)
+        write('#include "object_lifetime_validation.h"', file = self.outFile)
         self.newline()
         write('namespace object_tracker {', file = self.outFile)
     #
