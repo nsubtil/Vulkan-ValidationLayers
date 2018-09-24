@@ -37,6 +37,8 @@
 #define NOMINMAX
 #define VALIDATION_ERROR_MAP_IMPL
 
+#define UBER_LAYER 1
+
 #include <algorithm>
 #include <array>
 #include <assert.h>
@@ -62,6 +64,9 @@
 #if defined(__GNUC__)
 #pragma GCC diagnostic warning "-Wwrite-strings"
 #endif
+
+#include "object_lifetimes.h"
+
 #include "core_validation.h"
 #include "buffer_validation.h"
 #include "shader_validation.h"
@@ -69,6 +74,12 @@
 #include "vk_layer_extension_utils.h"
 #include "vk_layer_utils.h"
 #include "vk_typemap_helper.h"
+
+namespace object_tracker {
+#include "precall.h"
+#include "postcall.h"
+}
+
 
 #if defined __ANDROID__
 #include <android/log.h>
@@ -140,85 +151,17 @@ static const VkDeviceMemory MEMTRACKER_SWAP_CHAIN_IMAGE_KEY = (VkDeviceMemory)(-
 // 2nd special memory handle used to flag object as unbound from memory
 static const VkDeviceMemory MEMORY_UNBOUND = VkDeviceMemory(~((uint64_t)(0)) - 1);
 
-struct instance_layer_data {
-    VkInstance instance = VK_NULL_HANDLE;
-    debug_report_data *report_data = nullptr;
-    vector<VkDebugReportCallbackEXT> logging_callback;
-    vector<VkDebugUtilsMessengerEXT> logging_messenger;
-    VkLayerInstanceDispatchTable dispatch_table;
+}  // namespace core_validation
 
-    CALL_STATE vkEnumeratePhysicalDevicesState = UNCALLED;
-    uint32_t physical_devices_count = 0;
-    CALL_STATE vkEnumeratePhysicalDeviceGroupsState = UNCALLED;
-    uint32_t physical_device_groups_count = 0;
-    CHECK_DISABLED disabled = {};
-
-    unordered_map<VkPhysicalDevice, PHYSICAL_DEVICE_STATE> physical_device_map;
-    unordered_map<VkSurfaceKHR, SURFACE_STATE> surface_map;
-
-    InstanceExtensions extensions;
-    uint32_t api_version;
-};
-
-struct layer_data {
-    debug_report_data *report_data = nullptr;
-    VkLayerDispatchTable dispatch_table;
-
-    DeviceExtensions extensions = {};
-    unordered_set<VkQueue> queues;  // All queues under given device
-    // Layer specific data
-    unordered_map<VkSampler, unique_ptr<SAMPLER_STATE>> samplerMap;
-    unordered_map<VkImageView, unique_ptr<IMAGE_VIEW_STATE>> imageViewMap;
-    unordered_map<VkImage, unique_ptr<IMAGE_STATE>> imageMap;
-    unordered_map<VkBufferView, unique_ptr<BUFFER_VIEW_STATE>> bufferViewMap;
-    unordered_map<VkBuffer, unique_ptr<BUFFER_STATE>> bufferMap;
-    unordered_map<VkPipeline, unique_ptr<PIPELINE_STATE>> pipelineMap;
-    unordered_map<VkCommandPool, COMMAND_POOL_NODE> commandPoolMap;
-    unordered_map<VkDescriptorPool, DESCRIPTOR_POOL_STATE *> descriptorPoolMap;
-    unordered_map<VkDescriptorSet, cvdescriptorset::DescriptorSet *> setMap;
-    unordered_map<VkDescriptorSetLayout, std::shared_ptr<cvdescriptorset::DescriptorSetLayout>> descriptorSetLayoutMap;
-    unordered_map<VkPipelineLayout, PIPELINE_LAYOUT_NODE> pipelineLayoutMap;
-    unordered_map<VkDeviceMemory, unique_ptr<DEVICE_MEM_INFO>> memObjMap;
-    unordered_map<VkFence, FENCE_NODE> fenceMap;
-    unordered_map<VkQueue, QUEUE_STATE> queueMap;
-    unordered_map<VkEvent, EVENT_STATE> eventMap;
-    unordered_map<QueryObject, bool> queryToStateMap;
-    unordered_map<VkQueryPool, QUERY_POOL_NODE> queryPoolMap;
-    unordered_map<VkSemaphore, SEMAPHORE_NODE> semaphoreMap;
-    unordered_map<VkCommandBuffer, GLOBAL_CB_NODE *> commandBufferMap;
-    unordered_map<VkFramebuffer, unique_ptr<FRAMEBUFFER_STATE>> frameBufferMap;
-    unordered_map<VkImage, vector<ImageSubresourcePair>> imageSubresourceMap;
-    unordered_map<ImageSubresourcePair, IMAGE_LAYOUT_NODE> imageLayoutMap;
-    unordered_map<VkRenderPass, std::shared_ptr<RENDER_PASS_STATE>> renderPassMap;
-    unordered_map<VkShaderModule, unique_ptr<shader_module>> shaderModuleMap;
-    unordered_map<VkDescriptorUpdateTemplateKHR, unique_ptr<TEMPLATE_STATE>> desc_template_map;
-    unordered_map<VkSwapchainKHR, std::unique_ptr<SWAPCHAIN_NODE>> swapchainMap;
-    GlobalQFOTransferBarrierMap<VkImageMemoryBarrier> qfo_release_image_barrier_map;
-    GlobalQFOTransferBarrierMap<VkBufferMemoryBarrier> qfo_release_buffer_barrier_map;
-
-    VkDevice device = VK_NULL_HANDLE;
-    VkPhysicalDevice physical_device = VK_NULL_HANDLE;
-
-    instance_layer_data *instance_data = nullptr;  // from device to enclosing instance
-
-    DeviceFeatures enabled_features = {};
-    // Device specific data
-    PHYS_DEV_PROPERTIES_NODE phys_dev_properties = {};
-    VkPhysicalDeviceMemoryProperties phys_dev_mem_props = {};
-    VkPhysicalDeviceProperties phys_dev_props = {};
-    // Device extension properties -- storing properties gathered from VkPhysicalDeviceProperties2KHR::pNext chain
-    struct DeviceExtensionProperties {
-        uint32_t max_push_descriptors;  // from VkPhysicalDevicePushDescriptorPropertiesKHR::maxPushDescriptors
-        VkPhysicalDeviceDescriptorIndexingPropertiesEXT descriptor_indexing_props;
-    };
-    DeviceExtensionProperties phys_dev_ext_props = {};
-    bool external_sync_warning = false;
-    uint32_t api_version = 0;
-};
+#include "core_validation_data.h"
 
 // TODO : Do we need to guard access to layer_data_map w/ lock?
-static unordered_map<void *, layer_data *> layer_data_map;
-static unordered_map<void *, instance_layer_data *> instance_layer_data_map;
+std::unordered_map<void *, core_validation::layer_data *> layer_data_map;
+std::unordered_map<void *, core_validation::instance_layer_data *> instance_layer_data_map;
+
+#include "object_lifetime_validation.h"
+
+namespace core_validation {
 
 static uint32_t loader_layer_if_version = CURRENT_LOADER_LAYER_INTERFACE_VERSION;
 
@@ -4860,16 +4803,41 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateImageView(VkDevice device, const VkImageVie
     return result;
 }
 
+////////////VKAPI_ATTR VkResult VKAPI_CALL CreateFence(VkDevice device, const VkFenceCreateInfo *pCreateInfo,
+////////////                                           const VkAllocationCallbacks *pAllocator, VkFence *pFence) {
+////////////    layer_data *dev_data = GetLayerDataPtr(get_dispatch_key(device), layer_data_map);
+////////////    VkResult result = dev_data->dispatch_table.CreateFence(device, pCreateInfo, pAllocator, pFence);
+////////////    if (VK_SUCCESS == result) {
+////////////        lock_guard_t lock(global_lock);
+////////////        auto &fence_node = dev_data->fenceMap[*pFence];
+////////////        fence_node.fence = *pFence;
+////////////        fence_node.createInfo = *pCreateInfo;
+////////////        fence_node.state = (pCreateInfo->flags & VK_FENCE_CREATE_SIGNALED_BIT) ? FENCE_RETIRED : FENCE_UNSIGNALED;
+////////////    }
+////////////    return result;
+////////////}
+
+static void PostCallRecordCreateFence(layer_data *dev_data, const VkFenceCreateInfo *pCreateInfo, VkFence *pFence) {
+    auto &fence_node = dev_data->fenceMap[*pFence];
+    fence_node.fence = *pFence;
+    fence_node.createInfo = *pCreateInfo;
+    fence_node.state = (pCreateInfo->flags & VK_FENCE_CREATE_SIGNALED_BIT) ? FENCE_RETIRED : FENCE_UNSIGNALED;
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL CreateFence(VkDevice device, const VkFenceCreateInfo *pCreateInfo,
                                            const VkAllocationCallbacks *pAllocator, VkFence *pFence) {
     layer_data *dev_data = GetLayerDataPtr(get_dispatch_key(device), layer_data_map);
+    {
+        lock_guard_t lock(global_lock);
+        bool skip = false; // object_tracker::PreCallValidateCreateFence(device, pCreateInfo, pAllocator, pFence);
+        if (skip) return VK_ERROR_VALIDATION_FAILED_EXT;
+    }
     VkResult result = dev_data->dispatch_table.CreateFence(device, pCreateInfo, pAllocator, pFence);
     if (VK_SUCCESS == result) {
         lock_guard_t lock(global_lock);
-        auto &fence_node = dev_data->fenceMap[*pFence];
-        fence_node.fence = *pFence;
-        fence_node.createInfo = *pCreateInfo;
-        fence_node.state = (pCreateInfo->flags & VK_FENCE_CREATE_SIGNALED_BIT) ? FENCE_RETIRED : FENCE_UNSIGNALED;
+        PostCallRecordCreateFence(dev_data, pCreateInfo, pFence);
+        object_tracker::PostCallRecordCreateFence(device, pCreateInfo, pAllocator, pFence);
+
     }
     return result;
 }
@@ -12931,7 +12899,7 @@ VKAPI_ATTR VkResult VKAPI_CALL EnumeratePhysicalDeviceGroups(VkInstance instance
     bool skip = false;
     instance_layer_data *instance_data = GetLayerDataPtr(get_dispatch_key(instance), instance_layer_data_map);
 
-    skip = PreCallValidateEnumeratePhysicalDeviceGroups(instance, pPhysicalDeviceGroupCount, pPhysicalDeviceGroupProperties);
+    skip = core_validation::PreCallValidateEnumeratePhysicalDeviceGroups(instance, pPhysicalDeviceGroupCount, pPhysicalDeviceGroupProperties);
     if (skip) {
         return VK_ERROR_VALIDATION_FAILED_EXT;
     }
@@ -12949,7 +12917,7 @@ VKAPI_ATTR VkResult VKAPI_CALL EnumeratePhysicalDeviceGroupsKHR(
     bool skip = false;
     instance_layer_data *instance_data = GetLayerDataPtr(get_dispatch_key(instance), instance_layer_data_map);
 
-    skip = PreCallValidateEnumeratePhysicalDeviceGroups(instance, pPhysicalDeviceGroupCount, pPhysicalDeviceGroupProperties);
+    skip = core_validation::PreCallValidateEnumeratePhysicalDeviceGroups(instance, pPhysicalDeviceGroupCount, pPhysicalDeviceGroupProperties);
     if (skip) {
         return VK_ERROR_VALIDATION_FAILED_EXT;
     }

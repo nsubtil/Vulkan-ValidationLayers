@@ -31,7 +31,7 @@
 #include "vulkan/vulkan.h"
 #include "vk_object_types.h"
 #include "vk_layer_logging.h"
-#include "object_lifetimes.h"
+//#include "object_lifetimes.h"
 
 namespace object_tracker {
 

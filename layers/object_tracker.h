@@ -44,13 +44,12 @@
 #include "vk_extension_helper.h"
 #include "object_lifetimes.h"
 
+
 namespace object_tracker {
 
     struct layer_data;
     struct instance_layer_data;
 
-    extern std::unordered_map<void *, layer_data *> layer_data_map;
-    extern std::unordered_map<void *, instance_layer_data *> instance_layer_data_map;
     extern std::mutex global_lock;
     extern uint32_t loader_layer_if_version;
     extern const std::unordered_map<std::string, void *> name_to_funcptr_map;
@@ -101,6 +100,6 @@ struct layer_data {
     layer_data() : instance_data(nullptr), physical_device(nullptr), report_data(nullptr), device_dispatch_table{} {}
 };
 
-
-
 }  // namespace object_tracker
+extern std::unordered_map<void *, object_tracker::layer_data *> layer_data_map;
+extern std::unordered_map<void *, object_tracker::instance_layer_data *> instance_layer_data_map;

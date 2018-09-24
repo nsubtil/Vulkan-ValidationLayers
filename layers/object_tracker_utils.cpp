@@ -20,8 +20,20 @@
  * Author: Tobin Ehlis <tobin@lunarg.com>
  */
 
+
+#ifdef UBER_LAYER
+#include "core_validation.h"
+#include "core_validation_data.h"
+using core_validation::layer_data;
+using core_validation::instance_layer_data;
+#else
 #include "object_tracker.h"
+#endif
 #include "object_lifetime_validation.h"
+
+
+
+
 
 namespace object_tracker {
 

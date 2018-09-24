@@ -30,6 +30,7 @@
 #include "vk_layer_logging.h"
 #include "vk_object_types.h"
 #include "vk_extension_helper.h"
+#include "object_lifetimes.h"
 #include <atomic>
 #include <functional>
 #include <map>

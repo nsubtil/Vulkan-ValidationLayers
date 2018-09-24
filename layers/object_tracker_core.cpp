@@ -23,16 +23,17 @@
 #define VALIDATION_ERROR_MAP_IMPL
 
 #include "object_tracker.h"
+#include "object_lifetimes.h"
 #include "object_lifetime_validation.h"
 
+std::unordered_map<void *, object_tracker::layer_data *> layer_data_map;
+std::unordered_map<void *, object_tracker::instance_layer_data *> instance_layer_data_map;
 
 namespace object_tracker {
 
 #include "precall.h"
 #include "postcall.h"
 
-std::unordered_map<void *, layer_data *> layer_data_map;
-std::unordered_map<void *, instance_layer_data *> instance_layer_data_map;
 std::mutex global_lock;
 uint32_t loader_layer_if_version = CURRENT_LOADER_LAYER_INTERFACE_VERSION;
 

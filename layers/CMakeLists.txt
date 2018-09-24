@@ -199,6 +199,7 @@ if(BUILD_LAYERS)
     # Core validation has additional dependencies
     target_include_directories(VkLayer_core_validation PRIVATE ${GLSLANG_SPIRV_INCLUDE_DIR})
     target_include_directories(VkLayer_core_validation PRIVATE ${SPIRV_TOOLS_INCLUDE_DIR})
+    set_target_properties(VkLayer_core_validation PROPERTIES COMPILE_DEFINITIONS "UBER_LAYER=1")
     target_link_libraries(VkLayer_core_validation ${SPIRV_TOOLS_LIBRARIES})
     add_dependencies(VkLayer_core_validation spirv_tools_revision_file)
 endif()
