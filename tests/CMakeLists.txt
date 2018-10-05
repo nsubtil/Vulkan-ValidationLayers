@@ -104,7 +104,16 @@ set(
     )
 find_package(Vulkan)
 
-add_executable(vk_layer_validation_tests layer_validation_tests.cpp ../layers/vk_format_utils.cpp ${COMMON_CPP})
+set_source_files_properties(${PROJECT_BINARY_DIR}/vk_safe_struct.cpp
+                            PROPERTIES GENERATED TRUE)
+
+add_executable(vk_layer_validation_tests 
+               layer_validation_tests.cpp
+               ../layers/vk_format_utils.cpp
+               ../layers/convert_to_renderpass2.cpp
+               ${PROJECT_BINARY_DIR}/vk_safe_struct.cpp
+               ${COMMON_CPP})
+
 set_target_properties(vk_layer_validation_tests PROPERTIES COMPILE_DEFINITIONS "GTEST_LINKED_AS_SHARED_LIBRARY=1")
 target_include_directories(vk_layer_validation_tests
                            PUBLIC ${VulkanHeaders_INCLUDE_DIR}
