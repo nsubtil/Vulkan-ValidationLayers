@@ -89,6 +89,8 @@ extern bool parameter_validation_vkCreateCommandPool(VkDevice device, const VkCo
                                                      const VkAllocationCallbacks *pAllocator, VkCommandPool *pCommandPool);
 extern bool parameter_validation_vkCreateRenderPass(VkDevice device, const VkRenderPassCreateInfo *pCreateInfo,
                                                     const VkAllocationCallbacks *pAllocator, VkRenderPass *pRenderPass);
+extern bool parameter_validation_vkCreateRenderPass2KHR(VkDevice device, const VkRenderPassCreateInfo2KHR *pCreateInfo,
+                                                        const VkAllocationCallbacks *pAllocator, VkRenderPass *pRenderPass);
 extern bool parameter_validation_vkDestroyRenderPass(VkDevice device, VkRenderPass renderPass,
                                                      const VkAllocationCallbacks *pAllocator);
 
@@ -758,6 +760,25 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateQueryPool(VkDevice device, const VkQueryP
     return result;
 }
 
+template <typename T>
+static void RecordRenderPass(layer_data *device_data, VkRenderPass renderPass, const T *pCreateInfo) {
+    auto &renderpass_state = device_data->renderpasses_states[renderPass];
+
+    for (uint32_t subpass = 0; subpass < pCreateInfo->subpassCount; ++subpass) {
+        bool uses_color = false;
+        for (uint32_t i = 0; i < pCreateInfo->pSubpasses[subpass].colorAttachmentCount && !uses_color; ++i)
+            if (pCreateInfo->pSubpasses[subpass].pColorAttachments[i].attachment != VK_ATTACHMENT_UNUSED) uses_color = true;
+
+        bool uses_depthstencil = false;
+        if (pCreateInfo->pSubpasses[subpass].pDepthStencilAttachment)
+            if (pCreateInfo->pSubpasses[subpass].pDepthStencilAttachment->attachment != VK_ATTACHMENT_UNUSED)
+                uses_depthstencil = true;
+
+        if (uses_color) renderpass_state.subpasses_using_color_attachment.insert(subpass);
+        if (uses_depthstencil) renderpass_state.subpasses_using_depthstencil_attachment.insert(subpass);
+    }
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateRenderPass(VkDevice device, const VkRenderPassCreateInfo *pCreateInfo,
                                                   const VkAllocationCallbacks *pAllocator, VkRenderPass *pRenderPass) {
     layer_data *device_data = GetLayerDataPtr(get_dispatch_key(device), layer_data_map);
@@ -782,22 +803,38 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateRenderPass(VkDevice device, const VkRende
         // track the state necessary for checking vkCreateGraphicsPipeline (subpass usage of depth and color attachments)
         if (result == VK_SUCCESS) {
             std::unique_lock<std::mutex> lock(global_lock);
-            const auto renderPass = *pRenderPass;
-            auto &renderpass_state = device_data->renderpasses_states[renderPass];
+            RecordRenderPass(device_data, *pRenderPass, pCreateInfo);
+        }
+    }
+    return result;
+}
 
-            for (uint32_t subpass = 0; subpass < pCreateInfo->subpassCount; ++subpass) {
-                bool uses_color = false;
-                for (uint32_t i = 0; i < pCreateInfo->pSubpasses[subpass].colorAttachmentCount && !uses_color; ++i)
-                    if (pCreateInfo->pSubpasses[subpass].pColorAttachments[i].attachment != VK_ATTACHMENT_UNUSED) uses_color = true;
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateRenderPass2KHR(VkDevice device, const VkRenderPassCreateInfo2KHR *pCreateInfo,
+                                                      const VkAllocationCallbacks *pAllocator, VkRenderPass *pRenderPass) {
+    layer_data *device_data = GetLayerDataPtr(get_dispatch_key(device), layer_data_map);
+    bool skip = false;
+    VkResult result = VK_ERROR_VALIDATION_FAILED_EXT;
 
-                bool uses_depthstencil = false;
-                if (pCreateInfo->pSubpasses[subpass].pDepthStencilAttachment)
-                    if (pCreateInfo->pSubpasses[subpass].pDepthStencilAttachment->attachment != VK_ATTACHMENT_UNUSED)
-                        uses_depthstencil = true;
+    {
+        std::unique_lock<std::mutex> lock(global_lock);
+        skip |= parameter_validation_vkCreateRenderPass2KHR(device, pCreateInfo, pAllocator, pRenderPass);
 
-                if (uses_color) renderpass_state.subpasses_using_color_attachment.insert(subpass);
-                if (uses_depthstencil) renderpass_state.subpasses_using_depthstencil_attachment.insert(subpass);
-            }
+        typedef bool (*PFN_manual_vkCreateRenderPass2KHR)(VkDevice device, const VkRenderPassCreateInfo2KHR *pCreateInfo,
+                                                          const VkAllocationCallbacks *pAllocator, VkRenderPass *pRenderPass);
+        PFN_manual_vkCreateRenderPass2KHR custom_func =
+            (PFN_manual_vkCreateRenderPass2KHR)custom_functions["vkCreateRenderPass2KHR"];
+        if (custom_func != nullptr) {
+            skip |= custom_func(device, pCreateInfo, pAllocator, pRenderPass);
+        }
+    }
+
+    if (!skip) {
+        result = device_data->dispatch_table.CreateRenderPass2KHR(device, pCreateInfo, pAllocator, pRenderPass);
+
+        // track the state necessary for checking vkCreateGraphicsPipeline (subpass usage of depth and color attachments)
+        if (result == VK_SUCCESS) {
+            std::unique_lock<std::mutex> lock(global_lock);
+            RecordRenderPass(device_data, *pRenderPass, pCreateInfo);
         }
     }
     return result;
@@ -2680,6 +2717,40 @@ bool pv_vkCreateRenderPass(VkDevice device, const VkRenderPassCreateInfo *pCreat
     return skip;
 }
 
+bool pv_vkCreateRenderPass2KHR(VkDevice device, const VkRenderPassCreateInfo2KHR *pCreateInfo,
+                               const VkAllocationCallbacks *pAllocator, VkRenderPass *pRenderPass) {
+    bool skip = false;
+    layer_data *device_data = GetLayerDataPtr(get_dispatch_key(device), layer_data_map);
+    uint32_t max_color_attachments = device_data->device_limits.maxColorAttachments;
+
+    for (uint32_t i = 0; i < pCreateInfo->attachmentCount; ++i) {
+        if (pCreateInfo->pAttachments[i].format == VK_FORMAT_UNDEFINED) {
+            std::stringstream ss;
+            ss << "vkCreateRenderPass2KHR: pCreateInfo->pAttachments[" << i << "].format is VK_FORMAT_UNDEFINED. ";
+            skip |= log_msg(device_data->report_data, VK_DEBUG_REPORT_WARNING_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0,
+                            "VUID-VkAttachmentDescription2KHR-format-parameter", "%s", ss.str().c_str());
+        }
+        if (pCreateInfo->pAttachments[i].finalLayout == VK_IMAGE_LAYOUT_UNDEFINED ||
+            pCreateInfo->pAttachments[i].finalLayout == VK_IMAGE_LAYOUT_PREINITIALIZED) {
+            skip |= log_msg(device_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0,
+                            "VUID-VkAttachmentDescription2KHR-finalLayout-03061",
+                            "pCreateInfo->pAttachments[%d].finalLayout must not be VK_IMAGE_LAYOUT_UNDEFINED or "
+                            "VK_IMAGE_LAYOUT_PREINITIALIZED.",
+                            i);
+        }
+    }
+
+    for (uint32_t i = 0; i < pCreateInfo->subpassCount; ++i) {
+        if (pCreateInfo->pSubpasses[i].colorAttachmentCount > max_color_attachments) {
+            skip |= log_msg(device_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0,
+                            "VUID-VkSubpassDescription2KHR-colorAttachmentCount-03063",
+                            "Cannot create a render pass with %d color attachments. Max is %d.",
+                            pCreateInfo->pSubpasses[i].colorAttachmentCount, max_color_attachments);
+        }
+    }
+    return skip;
+}
+
 bool pv_vkFreeCommandBuffers(VkDevice device, VkCommandPool commandPool, uint32_t commandBufferCount,
                              const VkCommandBuffer *pCommandBuffers) {
     bool skip = false;
@@ -3658,6 +3729,7 @@ void InitializeManualParameterValidationFunctionPointers() {
     custom_functions["vkFreeDescriptorSets"] = (void *)pv_vkFreeDescriptorSets;
     custom_functions["vkUpdateDescriptorSets"] = (void *)pv_vkUpdateDescriptorSets;
     custom_functions["vkCreateRenderPass"] = (void *)pv_vkCreateRenderPass;
+    custom_functions["vkCreateRenderPass2KHR"] = (void *)pv_vkCreateRenderPass2KHR;
     custom_functions["vkBeginCommandBuffer"] = (void *)pv_vkBeginCommandBuffer;
     custom_functions["vkCmdSetViewport"] = (void *)pv_vkCmdSetViewport;
     custom_functions["vkCmdSetScissor"] = (void *)pv_vkCmdSetScissor;
