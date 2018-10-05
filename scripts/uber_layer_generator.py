@@ -185,7 +185,7 @@ static const VkLayerProperties global_layer = {
 
 static const VkExtensionProperties instance_extensions[] = {{VK_EXT_DEBUG_REPORT_EXTENSION_NAME, VK_EXT_DEBUG_REPORT_SPEC_VERSION}};
 
-extern const std::unordered_map<std::string, void*> name_to_funcptr_map;
+extern std::unordered_map<std::string, void*> name_to_funcptr_map;
 
 
 // Manually written functions
@@ -346,7 +346,7 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateDevice(VkPhysicalDevice gpu, const VkDevice
     }
     layer_data *device_data = GetLayerDataPtr(get_dispatch_key(*pDevice), layer_data_map);
     device_data->instance_data = instance_data;
-    layer_init_device_dispatch_table(*pDevice, &device_data->dispatch_table, fpGetDeviceProcAddr);
+    layer_init_device_dispatch_table(*pDevice, &device_data->dispatch_table, fpGetDeviceProcAddr, &name_to_funcptr_map);
     device_data->device = *pDevice;
     device_data->physical_device = gpu;
     device_data->report_data = layer_debug_utils_create_device(instance_data->report_data, *pDevice);
@@ -609,7 +609,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkNegotiateLoaderLayerInterfaceVe
         if not self.header:
             # Record intercepted procedures
             write('// Map of all APIs to be intercepted by this layer', file=self.outFile)
-            write('const std::unordered_map<std::string, void*> name_to_funcptr_map = {', file=self.outFile)
+            write('std::unordered_map<std::string, void*> name_to_funcptr_map = {', file=self.outFile)
             write('\n'.join(self.intercepts), file=self.outFile)
             write('};\n', file=self.outFile)
             self.newline()
