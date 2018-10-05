@@ -414,12 +414,12 @@ struct DAGNode {
 
 struct RENDER_PASS_STATE : public BASE_NODE {
     VkRenderPass renderPass;
-    safe_VkRenderPassCreateInfo createInfo;
+    safe_VkRenderPassCreateInfo2KHR createInfo;
     std::vector<std::vector<uint32_t>> self_dependencies;
     std::vector<DAGNode> subpassToNode;
     std::unordered_map<uint32_t, bool> attachment_first_read;
 
-    RENDER_PASS_STATE(VkRenderPassCreateInfo const *pCreateInfo) : createInfo(pCreateInfo) {}
+    RENDER_PASS_STATE(VkRenderPassCreateInfo2KHR const *pCreateInfo) : createInfo(pCreateInfo) {}
 };
 
 // vkCmd tracking -- complete as of header 1.0.68
@@ -1101,6 +1101,8 @@ struct DeviceFeatures {
     VkPhysicalDeviceMeshShaderFeaturesNV mesh_shader;
     VkPhysicalDeviceInlineUniformBlockFeaturesEXT inline_uniform_block;
 };
+
+enum RenderPassCreateVersion { RENDER_PASS_VERSION_1 = 0, RENDER_PASS_VERSION_2 = 1 };
 
 // Fwd declarations of layer_data and helpers to look-up/validate state from layer_data maps
 namespace core_validation {

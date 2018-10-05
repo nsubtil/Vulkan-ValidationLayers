@@ -183,7 +183,7 @@ run_vk_xml_generate(dispatch_table_helper_generator.py vk_dispatch_table_helper.
 run_vk_xml_generate(object_tracker_generator.py object_tracker.cpp)
 
 if(BUILD_LAYERS)
-    add_vk_layer(core_validation core_validation.cpp descriptor_sets.cpp buffer_validation.cpp shader_validation.cpp xxhash.c)
+    add_vk_layer(core_validation core_validation.cpp convert_to_renderpass2.cpp descriptor_sets.cpp buffer_validation.cpp shader_validation.cpp xxhash.c)
     add_vk_layer(object_tracker object_tracker.cpp object_tracker_utils.cpp)
     add_vk_layer(threading threading.cpp thread_check.h)
     add_vk_layer(unique_objects unique_objects.cpp unique_objects_wrappers.h)
