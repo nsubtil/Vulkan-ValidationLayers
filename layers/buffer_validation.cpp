@@ -326,6 +326,8 @@ bool ValidateRenderPassLayoutAgainstFramebufferImageUsage(layer_data *device_dat
     bool skip = false;
     const auto report_data = core_validation::GetReportData(device_data);
     auto image_state = GetImageState(device_data, image);
+    const char *vuid;
+    bool use_rp2 = (rp_version == RENDER_PASS_VERSION_2);
 
     if (!image_state) {
         skip |= log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_EXT, HandleToUint64(image),
@@ -340,10 +342,7 @@ bool ValidateRenderPassLayoutAgainstFramebufferImageUsage(layer_data *device_dat
 
     // Check for layouts that mismatch image usages in the framebuffer
     if (layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL && !(image_usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)) {
-        const char *vuid = "VUID-vkCmdBeginRenderPass-initialLayout-00895";
-        if (rp_version == RENDER_PASS_VERSION_2) {
-            vuid = "VUID-vkCmdBeginRenderPass2KHR-initialLayout-03094";
-        }
+        vuid = use_rp2 ? "VUID-vkCmdBeginRenderPass2KHR-initialLayout-03094" : "VUID-vkCmdBeginRenderPass-initialLayout-00895";
         skip |=
             log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_EXT, HandleToUint64(image), vuid,
                     "Layout/usage mismatch for attachment %u in render pass 0x%" PRIx64
@@ -355,10 +354,7 @@ bool ValidateRenderPassLayoutAgainstFramebufferImageUsage(layer_data *device_dat
 
     if (layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL &&
         !(image_usage & (VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT))) {
-        const char *vuid = "VUID-vkCmdBeginRenderPass-initialLayout-00897";
-        if (rp_version == RENDER_PASS_VERSION_2) {
-            vuid = "VUID-vkCmdBeginRenderPass2KHR-initialLayout-03097";
-        }
+        vuid = use_rp2 ? "VUID-vkCmdBeginRenderPass2KHR-initialLayout-03097" : "VUID-vkCmdBeginRenderPass-initialLayout-00897";
         skip |=
             log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_EXT, HandleToUint64(image), vuid,
                     "Layout/usage mismatch for attachment %u in render pass 0x%" PRIx64
@@ -369,10 +365,7 @@ bool ValidateRenderPassLayoutAgainstFramebufferImageUsage(layer_data *device_dat
     }
 
     if (layout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL && !(image_usage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT)) {
-        const char *vuid = "VUID-vkCmdBeginRenderPass-initialLayout-00898";
-        if (rp_version == RENDER_PASS_VERSION_2) {
-            vuid = "VUID-vkCmdBeginRenderPass2KHR-initialLayout-03098";
-        }
+        vuid = use_rp2 ? "VUID-vkCmdBeginRenderPass2KHR-initialLayout-03098" : "VUID-vkCmdBeginRenderPass-initialLayout-00898";
         skip |=
             log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_EXT, HandleToUint64(image), vuid,
                     "Layout/usage mismatch for attachment %u in render pass 0x%" PRIx64
@@ -383,10 +376,7 @@ bool ValidateRenderPassLayoutAgainstFramebufferImageUsage(layer_data *device_dat
     }
 
     if (layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && !(image_usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT)) {
-        const char *vuid = "VUID-vkCmdBeginRenderPass-initialLayout-00899";
-        if (rp_version == RENDER_PASS_VERSION_2) {
-            vuid = "VUID-vkCmdBeginRenderPass2KHR-initialLayout-03099";
-        }
+        vuid = use_rp2 ? "VUID-vkCmdBeginRenderPass2KHR-initialLayout-03099" : "VUID-vkCmdBeginRenderPass-initialLayout-00899";
         skip |=
             log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_EXT, HandleToUint64(image), vuid,
                     "Layout/usage mismatch for attachment %u in render pass 0x%" PRIx64
@@ -402,10 +392,7 @@ bool ValidateRenderPassLayoutAgainstFramebufferImageUsage(layer_data *device_dat
              layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL ||
              layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL) &&
             !(image_usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)) {
-            const char *vuid = "VUID-vkCmdBeginRenderPass-initialLayout-01758";
-            if (rp_version == RENDER_PASS_VERSION_2) {
-                vuid = "VUID-vkCmdBeginRenderPass2KHR-initialLayout-03096";
-            }
+            vuid = use_rp2 ? "VUID-vkCmdBeginRenderPass2KHR-initialLayout-03096" : "VUID-vkCmdBeginRenderPass-initialLayout-01758";
             skip |= log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_EXT,
                             HandleToUint64(image), vuid,
                             "Layout/usage mismatch for attachment %u in render pass 0x%" PRIx64
@@ -415,6 +402,7 @@ bool ValidateRenderPassLayoutAgainstFramebufferImageUsage(layer_data *device_dat
                             HandleToUint64(renderpass), HandleToUint64(image_view));
         }
     } else {
+        // The create render pass 2 extension requires maintenance 2 (the previous branch), so no vuid switch needed here.
         if ((layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL ||
              layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL) &&
             !(image_usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)) {
@@ -3220,14 +3208,15 @@ bool ValidateLayoutVsAttachmentDescription(const debug_report_data *report_data,
                                            const VkImageLayout first_layout, const uint32_t attachment,
                                            const VkAttachmentDescription2KHR &attachment_description) {
     bool skip = false;
+    const char *vuid;
+    bool use_rp2 = (rp_version == RENDER_PASS_VERSION_2);
+
     // Verify that initial loadOp on READ_ONLY attachments is not CLEAR
     if (attachment_description.loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) {
         if ((first_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL) ||
             (first_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)) {
-            const char *vuid = "VUID-VkRenderPassCreateInfo-pAttachments-00836";
-            if (rp_version == RENDER_PASS_VERSION_2) {
-                vuid = "VUID-VkRenderPassCreateInfo2KHR-pAttachments-03053";
-            }
+            vuid =
+                use_rp2 ? "VUID-VkRenderPassCreateInfo2KHR-pAttachments-03053" : "VUID-VkRenderPassCreateInfo-pAttachments-00836";
             skip |=
                 log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, vuid,
                         "Cannot clear attachment %d with invalid first layout %s.", attachment, string_VkImageLayout(first_layout));
@@ -3235,10 +3224,7 @@ bool ValidateLayoutVsAttachmentDescription(const debug_report_data *report_data,
     }
     if (attachment_description.loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) {
         if (first_layout == VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL) {
-            const char *vuid = "VUID-VkRenderPassCreateInfo-pAttachments-01566";
-            if (rp_version == RENDER_PASS_VERSION_2) {
-                vuid = kVUID_Core_DrawState_InvalidRenderpass;
-            }
+            vuid = use_rp2 ? kVUID_Core_DrawState_InvalidRenderpass : "VUID-VkRenderPassCreateInfo-pAttachments-01566";
             skip |=
                 log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, vuid,
                         "Cannot clear attachment %d with invalid first layout %s.", attachment, string_VkImageLayout(first_layout));
@@ -3247,10 +3233,7 @@ bool ValidateLayoutVsAttachmentDescription(const debug_report_data *report_data,
 
     if (attachment_description.stencilLoadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) {
         if (first_layout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL) {
-            const char *vuid = "VUID-VkRenderPassCreateInfo-pAttachments-01567";
-            if (rp_version == RENDER_PASS_VERSION_2) {
-                vuid = kVUID_Core_DrawState_InvalidRenderpass;
-            }
+            vuid = use_rp2 ? kVUID_Core_DrawState_InvalidRenderpass : "VUID-VkRenderPassCreateInfo-pAttachments-01567";
             skip |=
                 log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, vuid,
                         "Cannot clear attachment %d with invalid first layout %s.", attachment, string_VkImageLayout(first_layout));
@@ -3263,6 +3246,9 @@ bool ValidateLayouts(const core_validation::layer_data *device_data, RenderPassC
                      const VkRenderPassCreateInfo2KHR *pCreateInfo) {
     const debug_report_data *report_data = core_validation::GetReportData(device_data);
     bool skip = false;
+    const char *vuid;
+    bool use_rp2 = (rp_version == RENDER_PASS_VERSION_2);
+    const char *function_name = use_rp2 ? "vkCreateRenderPass2KHR()" : "vkCreateRenderPass()";
 
     for (uint32_t i = 0; i < pCreateInfo->attachmentCount; ++i) {
         VkFormat format = pCreateInfo->pAttachments[i].format;
@@ -3296,7 +3282,6 @@ bool ValidateLayouts(const core_validation::layer_data *device_data, RenderPassC
         for (uint32_t j = 0; j < subpass.inputAttachmentCount; ++j) {
             auto attach_index = subpass.pInputAttachments[j].attachment;
             if (attach_index == VK_ATTACHMENT_UNUSED) continue;
-            const char *vuid;
             switch (subpass.pInputAttachments[j].layout) {
                 case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL:
                 case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
@@ -3312,10 +3297,7 @@ bool ValidateLayouts(const core_validation::layer_data *device_data, RenderPassC
 
                 case VK_IMAGE_LAYOUT_UNDEFINED:
                 case VK_IMAGE_LAYOUT_PREINITIALIZED:
-                    vuid = "VUID-VkAttachmentReference-layout-00857";
-                    if (rp_version == RENDER_PASS_VERSION_2) {
-                        vuid = "VUID-VkAttachmentReference2KHR-layout-03077";
-                    }
+                    vuid = use_rp2 ? "VUID-VkAttachmentReference2KHR-layout-03077" : "VUID-VkAttachmentReference-layout-00857";
                     skip |= log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, vuid,
                                     "Layout for input attachment reference %u in subpass %u is %s but must be "
                                     "DEPTH_STENCIL_READ_ONLY, SHADER_READ_ONLY_OPTIMAL, or GENERAL.",
@@ -3342,20 +3324,15 @@ bool ValidateLayouts(const core_validation::layer_data *device_data, RenderPassC
                 }
                 if (!used_as_depth && !used_as_color &&
                     pCreateInfo->pAttachments[attach_index].loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) {
-                    vuid = "VUID-VkSubpassDescription-loadOp-00846";
-                    if (rp_version == RENDER_PASS_VERSION_2) {
-                        vuid = "VUID-VkSubpassDescription2KHR-loadOp-03064";
-                    }
-                    skip |= log_msg(
-                        report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, vuid,
-                        "CreateRenderPass: attachment %u is first used as an input attachment in subpass %u with loadOp=CLEAR.",
-                        attach_index, attach_index);
+                    vuid = use_rp2 ? "VUID-VkSubpassDescription2KHR-loadOp-03064" : "VUID-VkSubpassDescription-loadOp-00846";
+                    skip |= log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, vuid,
+                                    "%s: attachment %u is first used as an input attachment in subpass %u with loadOp=CLEAR.",
+                                    function_name, attach_index, attach_index);
                 }
             }
             attach_first_use[attach_index] = false;
         }
 
-        const char *vuid;
         for (uint32_t j = 0; j < subpass.colorAttachmentCount; ++j) {
             auto attach_index = subpass.pColorAttachments[j].attachment;
             if (attach_index == VK_ATTACHMENT_UNUSED) continue;
@@ -3379,10 +3356,7 @@ bool ValidateLayouts(const core_validation::layer_data *device_data, RenderPassC
 
                 case VK_IMAGE_LAYOUT_UNDEFINED:
                 case VK_IMAGE_LAYOUT_PREINITIALIZED:
-                    vuid = "VUID-VkAttachmentReference-layout-00857";
-                    if (rp_version == RENDER_PASS_VERSION_2) {
-                        vuid = "VUID-VkAttachmentReference2KHR-layout-03077";
-                    }
+                    vuid = use_rp2 ? "VUID-VkAttachmentReference2KHR-layout-03077" : "VUID-VkAttachmentReference-layout-00857";
                     skip |= log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, vuid,
                                     "Layout for color attachment reference %u in subpass %u is %s but should be "
                                     "COLOR_ATTACHMENT_OPTIMAL or GENERAL.",
@@ -3398,10 +3372,7 @@ bool ValidateLayouts(const core_validation::layer_data *device_data, RenderPassC
 
             if (subpass.pResolveAttachments && (subpass.pResolveAttachments[j].layout == VK_IMAGE_LAYOUT_UNDEFINED ||
                                                 subpass.pResolveAttachments[j].layout == VK_IMAGE_LAYOUT_PREINITIALIZED)) {
-                vuid = "VUID-VkAttachmentReference-layout-00857";
-                if (rp_version == RENDER_PASS_VERSION_2) {
-                    vuid = "VUID-VkAttachmentReference2KHR-layout-03077";
-                }
+                vuid = use_rp2 ? "VUID-VkAttachmentReference2KHR-layout-03077" : "VUID-VkAttachmentReference-layout-00857";
                 skip |= log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, vuid,
                                 "Layout for color attachment reference %u in subpass %u is %s but should be "
                                 "COLOR_ATTACHMENT_OPTIMAL or GENERAL.",
@@ -3432,10 +3403,7 @@ bool ValidateLayouts(const core_validation::layer_data *device_data, RenderPassC
 
                 case VK_IMAGE_LAYOUT_UNDEFINED:
                 case VK_IMAGE_LAYOUT_PREINITIALIZED:
-                    vuid = "VUID-VkAttachmentReference-layout-00857";
-                    if (rp_version == RENDER_PASS_VERSION_2) {
-                        vuid = "VUID-VkAttachmentReference2KHR-layout-03077";
-                    }
+                    vuid = use_rp2 ? "VUID-VkAttachmentReference2KHR-layout-03077" : "VUID-VkAttachmentReference-layout-00857";
                     skip |= log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, vuid,
                                     "Layout for depth attachment reference in subpass %u is %s but must be a valid depth/stencil "
                                     "layout or GENERAL.",
