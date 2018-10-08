@@ -353,8 +353,8 @@ bool ValidateRenderPassLayoutAgainstFramebufferImageUsage(layer_data *device_dat
                     HandleToUint64(renderpass), HandleToUint64(image_view));
     }
 
-    if (layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL && !(image_usage & VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT) &&
-        !(image_usage & VK_IMAGE_USAGE_SAMPLED_BIT)) {
+    if (layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL &&
+        !(image_usage & (VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT))) {
         const char *vuid = "VUID-vkCmdBeginRenderPass-initialLayout-00897";
         if (rp_version == RENDER_PASS_VERSION_2) {
             vuid = "VUID-vkCmdBeginRenderPass2KHR-initialLayout-03097";
@@ -396,12 +396,11 @@ bool ValidateRenderPassLayoutAgainstFramebufferImageUsage(layer_data *device_dat
                     HandleToUint64(renderpass), HandleToUint64(image_view));
     }
 
-    if (GetDeviceExtensions(device_data)->vk_khr_maintenance2 ||
-        GetPhysicalDeviceProperties(device_data)->apiVersion >= VK_VERSION_1_1) {
-        if ((layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL ||
-             layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL ||
+    if (GetDeviceExtensions(device_data)->vk_khr_maintenance2) {
+        if ((layout == VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL ||
              layout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL ||
-             layout == VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL) &&
+             layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL ||
+             layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL) &&
             !(image_usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)) {
             const char *vuid = "VUID-vkCmdBeginRenderPass-initialLayout-01758";
             if (rp_version == RENDER_PASS_VERSION_2) {
@@ -3297,7 +3296,7 @@ bool ValidateLayouts(const core_validation::layer_data *device_data, RenderPassC
         for (uint32_t j = 0; j < subpass.inputAttachmentCount; ++j) {
             auto attach_index = subpass.pInputAttachments[j].attachment;
             if (attach_index == VK_ATTACHMENT_UNUSED) continue;
-
+            const char *vuid;
             switch (subpass.pInputAttachments[j].layout) {
                 case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL:
                 case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
@@ -3312,8 +3311,8 @@ bool ValidateLayouts(const core_validation::layer_data *device_data, RenderPassC
                     break;
 
                 case VK_IMAGE_LAYOUT_UNDEFINED:
-                case VK_IMAGE_LAYOUT_PREINITIALIZED: {
-                    const char *vuid = "VUID-VkAttachmentReference-layout-00857";
+                case VK_IMAGE_LAYOUT_PREINITIALIZED:
+                    vuid = "VUID-VkAttachmentReference-layout-00857";
                     if (rp_version == RENDER_PASS_VERSION_2) {
                         vuid = "VUID-VkAttachmentReference2KHR-layout-03077";
                     }
@@ -3321,7 +3320,7 @@ bool ValidateLayouts(const core_validation::layer_data *device_data, RenderPassC
                                     "Layout for input attachment reference %u in subpass %u is %s but must be "
                                     "DEPTH_STENCIL_READ_ONLY, SHADER_READ_ONLY_OPTIMAL, or GENERAL.",
                                     j, i, string_VkImageLayout(subpass.pDepthStencilAttachment->layout));
-                } break;
+                    break;
 
                 default:
                     // No other layouts are acceptable
@@ -3343,7 +3342,7 @@ bool ValidateLayouts(const core_validation::layer_data *device_data, RenderPassC
                 }
                 if (!used_as_depth && !used_as_color &&
                     pCreateInfo->pAttachments[attach_index].loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) {
-                    const char *vuid = "VUID-VkSubpassDescription-loadOp-00846";
+                    vuid = "VUID-VkSubpassDescription-loadOp-00846";
                     if (rp_version == RENDER_PASS_VERSION_2) {
                         vuid = "VUID-VkSubpassDescription2KHR-loadOp-03064";
                     }
@@ -3355,6 +3354,8 @@ bool ValidateLayouts(const core_validation::layer_data *device_data, RenderPassC
             }
             attach_first_use[attach_index] = false;
         }
+
+        const char *vuid;
         for (uint32_t j = 0; j < subpass.colorAttachmentCount; ++j) {
             auto attach_index = subpass.pColorAttachments[j].attachment;
             if (attach_index == VK_ATTACHMENT_UNUSED) continue;
@@ -3377,8 +3378,8 @@ bool ValidateLayouts(const core_validation::layer_data *device_data, RenderPassC
                     break;
 
                 case VK_IMAGE_LAYOUT_UNDEFINED:
-                case VK_IMAGE_LAYOUT_PREINITIALIZED: {
-                    const char *vuid = "VUID-VkAttachmentReference-layout-00857";
+                case VK_IMAGE_LAYOUT_PREINITIALIZED:
+                    vuid = "VUID-VkAttachmentReference-layout-00857";
                     if (rp_version == RENDER_PASS_VERSION_2) {
                         vuid = "VUID-VkAttachmentReference2KHR-layout-03077";
                     }
@@ -3387,7 +3388,6 @@ bool ValidateLayouts(const core_validation::layer_data *device_data, RenderPassC
                                     "COLOR_ATTACHMENT_OPTIMAL or GENERAL.",
                                     j, i, string_VkImageLayout(subpass.pColorAttachments[j].layout));
                     break;
-                }
 
                 default:
                     skip |= log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0,
@@ -3398,7 +3398,7 @@ bool ValidateLayouts(const core_validation::layer_data *device_data, RenderPassC
 
             if (subpass.pResolveAttachments && (subpass.pResolveAttachments[j].layout == VK_IMAGE_LAYOUT_UNDEFINED ||
                                                 subpass.pResolveAttachments[j].layout == VK_IMAGE_LAYOUT_PREINITIALIZED)) {
-                const char *vuid = "VUID-VkAttachmentReference-layout-00857";
+                vuid = "VUID-VkAttachmentReference-layout-00857";
                 if (rp_version == RENDER_PASS_VERSION_2) {
                     vuid = "VUID-VkAttachmentReference2KHR-layout-03077";
                 }
@@ -3430,6 +3430,18 @@ bool ValidateLayouts(const core_validation::layer_data *device_data, RenderPassC
                                     "GENERAL layout for depth attachment may not give optimal performance.");
                     break;
 
+                case VK_IMAGE_LAYOUT_UNDEFINED:
+                case VK_IMAGE_LAYOUT_PREINITIALIZED:
+                    vuid = "VUID-VkAttachmentReference-layout-00857";
+                    if (rp_version == RENDER_PASS_VERSION_2) {
+                        vuid = "VUID-VkAttachmentReference2KHR-layout-03077";
+                    }
+                    skip |= log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, vuid,
+                                    "Layout for depth attachment reference in subpass %u is %s but must be a valid depth/stencil "
+                                    "layout or GENERAL.",
+                                    i, string_VkImageLayout(subpass.pDepthStencilAttachment->layout));
+                    break;
+
                 case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL_KHR:
                 case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL_KHR:
                     if (GetDeviceExtensions(device_data)->vk_khr_maintenance2) {
@@ -3439,18 +3451,6 @@ bool ValidateLayouts(const core_validation::layer_data *device_data, RenderPassC
                     }
                     // fall through
 
-                case VK_IMAGE_LAYOUT_UNDEFINED:
-                case VK_IMAGE_LAYOUT_PREINITIALIZED: {
-                    const char *vuid = "VUID-VkAttachmentReference-layout-00857";
-                    if (rp_version == RENDER_PASS_VERSION_2) {
-                        vuid = "VUID-VkAttachmentReference2KHR-layout-03077";
-                    }
-                    skip |= log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, vuid,
-                                    "Layout for depth attachment reference in subpass %u is %s but must be a valid depth/stencil "
-                                    "layout or GENERAL.",
-                                    i, string_VkImageLayout(subpass.pDepthStencilAttachment->layout));
-                    break;
-                }
                 default:
                     // No other layouts are acceptable
                     skip |= log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0,
