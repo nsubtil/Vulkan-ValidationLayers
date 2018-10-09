@@ -5866,9 +5866,7 @@ TEST_F(VkLayerTest, RenderPassCreateInvalidSubpassDependencies) {
 
         // View offset with no view local bit
         if (rp2Supported) {
-            dependency = {
-                0, VK_SUBPASS_EXTERNAL,         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0,
-                0, VK_DEPENDENCY_VIEW_LOCAL_BIT};
+            dependency = {0, VK_SUBPASS_EXTERNAL, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, 0};
             rpmvci.pViewOffsets = pViewOffsets;
             pViewOffsets[0] = 1;
             rpmvci.dependencyCount = 1;
