@@ -8102,19 +8102,19 @@ static bool HasNonFramebufferStagePipelineStageFlags(VkPipelineStageFlags inflag
                         VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT)) != 0;
 }
 
-static int GetGraphicsPipelineStageLogicalOrder(VkPipelineStageFlagBits flag) {
-    const VkPipelineStageFlagBits ordered_array[] = {VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                                                     VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
-                                                     VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
-                                                     VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
-                                                     VK_PIPELINE_STAGE_TESSELLATION_CONTROL_SHADER_BIT,
-                                                     VK_PIPELINE_STAGE_TESSELLATION_EVALUATION_SHADER_BIT,
-                                                     VK_PIPELINE_STAGE_GEOMETRY_SHADER_BIT,
-                                                     VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
-                                                     VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                                                     VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-                                                     VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                                                     VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT};
+static int GetGraphicsPipelineStageLogicalOrdinal(VkPipelineStageFlagBits flag) {
+    const VkPipelineStageFlagBits ordered_array[] = {
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
+        VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, VK_PIPELINE_STAGE_TESSELLATION_CONTROL_SHADER_BIT,
+        VK_PIPELINE_STAGE_TESSELLATION_EVALUATION_SHADER_BIT, VK_PIPELINE_STAGE_GEOMETRY_SHADER_BIT,
+        // Including the task/mesh shaders here is not technically correct, as they are in a
+        // separate logical pipeline - but it works for the case this is currently used, and
+        // fixing it would require significant rework and end up with the code being far more
+        // verbose for no practical gain.
+        // However, worth paying attention to this if using this function in a new way.
+        VK_PIPELINE_STAGE_TASK_SHADER_BIT_NV, VK_PIPELINE_STAGE_MESH_SHADER_BIT_NV, VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT};
 
     const int ordered_array_length = sizeof(ordered_array) / sizeof(VkPipelineStageFlagBits);
 
@@ -8127,16 +8127,21 @@ static int GetGraphicsPipelineStageLogicalOrder(VkPipelineStageFlagBits flag) {
     return -1;
 }
 
+// The following two functions technically have O(N^2) complexity, but it's for a value of O that's largely
+// stable and also rather tiny - this could definitely be rejigged to work more efficiently, but the impact
+// on runtime is currently negligible, so it wouldn't gain very much.
+// If we add a lot more graphics pipeline stages, this set of functions should be rewritten to accomodate.
 static VkPipelineStageFlagBits GetLogicallyEarliestGraphicsPipelineStage(VkPipelineStageFlags inflags) {
     VkPipelineStageFlagBits earliest_bit = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-    int earliest_bit_order = GetGraphicsPipelineStageLogicalOrder(earliest_bit);
+    int earliest_bit_order = GetGraphicsPipelineStageLogicalOrdinal(earliest_bit);
 
     for (int i = 0; i < sizeof(VkPipelineStageFlagBits); ++i) {
-        if (inflags & 0x1u) {
-            int new_order = GetGraphicsPipelineStageLogicalOrder((VkPipelineStageFlagBits)((inflags & 0x1u) << i));
+        VkPipelineStageFlagBits current_flag = (VkPipelineStageFlagBits)((inflags & 0x1u) << i);
+        if (current_flag) {
+            int new_order = GetGraphicsPipelineStageLogicalOrdinal(current_flag);
             if (new_order != -1 && new_order < earliest_bit_order) {
                 earliest_bit_order = new_order;
-                earliest_bit = (VkPipelineStageFlagBits)((inflags & 0x1u) << i);
+                earliest_bit = current_flag;
             }
         }
         inflags = inflags >> 1;
@@ -8146,11 +8151,11 @@ static VkPipelineStageFlagBits GetLogicallyEarliestGraphicsPipelineStage(VkPipel
 
 static VkPipelineStageFlagBits GetLogicallyLatestGraphicsPipelineStage(VkPipelineStageFlags inflags) {
     VkPipelineStageFlagBits latest_bit = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-    int latest_bit_order = GetGraphicsPipelineStageLogicalOrder(latest_bit);
+    int latest_bit_order = GetGraphicsPipelineStageLogicalOrdinal(latest_bit);
 
     for (int i = 0; i < sizeof(VkPipelineStageFlagBits); ++i) {
         if (inflags & 0x1u) {
-            int new_order = GetGraphicsPipelineStageLogicalOrder((VkPipelineStageFlagBits)((inflags & 0x1u) << i));
+            int new_order = GetGraphicsPipelineStageLogicalOrdinal((VkPipelineStageFlagBits)((inflags & 0x1u) << i));
             if (new_order != -1 && new_order > latest_bit_order) {
                 latest_bit_order = new_order;
                 latest_bit = (VkPipelineStageFlagBits)((inflags & 0x1u) << i);
@@ -10029,8 +10034,9 @@ static bool CreatePassDAG(const layer_data *dev_data, RenderPassCreateVersion rp
                             i, dependency.srcSubpass);
             } else if ((HasNonFramebufferStagePipelineStageFlags(dependency.srcStageMask) ||
                         HasNonFramebufferStagePipelineStageFlags(dependency.dstStageMask)) &&
-                       (GetGraphicsPipelineStageLogicalOrder(GetLogicallyLatestGraphicsPipelineStage(dependency.srcStageMask)) >
-                        GetGraphicsPipelineStageLogicalOrder(GetLogicallyEarliestGraphicsPipelineStage(dependency.dstStageMask)))) {
+                       (GetGraphicsPipelineStageLogicalOrdinal(GetLogicallyLatestGraphicsPipelineStage(dependency.srcStageMask)) >
+                        GetGraphicsPipelineStageLogicalOrdinal(
+                            GetLogicallyEarliestGraphicsPipelineStage(dependency.dstStageMask)))) {
                 vuid = use_rp2 ? "VUID-VkSubpassDependency2KHR-srcSubpass-03087" : "VUID-VkSubpassDependency-srcSubpass-00867";
                 skip |= log_msg(
                     dev_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, vuid,
