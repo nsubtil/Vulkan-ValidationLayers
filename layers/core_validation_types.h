@@ -33,13 +33,14 @@
 #include "vk_extension_helper.h"
 #include <atomic>
 #include <functional>
+#include <list>
 #include <map>
+#include <memory>
+#include <set>
 #include <string.h>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-#include <memory>
-#include <list>
 
 // Fwd declarations -- including descriptor_set.h creates an ugly include loop
 namespace cvdescriptorset {
@@ -147,8 +148,8 @@ struct DESCRIPTOR_POOL_STATE : BASE_NODE {
 
     safe_VkDescriptorPoolCreateInfo createInfo;
     std::unordered_set<cvdescriptorset::DescriptorSet *> sets;  // Collection of all sets in this pool
-    std::map<uint32_t, uint32_t> maxDescriptorTypeCount;               // Max # of descriptors of each type in this pool
-    std::map<uint32_t, uint32_t> availableDescriptorTypeCount;         // Available # of descriptors of each type in this pool
+    std::map<uint32_t, uint32_t> maxDescriptorTypeCount;        // Max # of descriptors of each type in this pool
+    std::map<uint32_t, uint32_t> availableDescriptorTypeCount;  // Available # of descriptors of each type in this pool
 
     DESCRIPTOR_POOL_STATE(const VkDescriptorPool pool, const VkDescriptorPoolCreateInfo *pCreateInfo)
         : pool(pool),
@@ -751,27 +752,27 @@ class PIPELINE_STATE : public BASE_NODE {
         computePipelineCI.initialize(&emptyComputeCI);
         graphicsPipelineCI.initialize(&emptyGraphicsCI, false, false);
         switch (raytracingPipelineCI.pStages->stage) {
-        case VK_SHADER_STAGE_RAYGEN_BIT_NVX:
-            this->active_shaders |= VK_SHADER_STAGE_RAYGEN_BIT_NVX;
-            break;
-        case VK_SHADER_STAGE_ANY_HIT_BIT_NVX:
-            this->active_shaders |= VK_SHADER_STAGE_ANY_HIT_BIT_NVX;
-            break;
-        case VK_SHADER_STAGE_CLOSEST_HIT_BIT_NVX:
-            this->active_shaders |= VK_SHADER_STAGE_CLOSEST_HIT_BIT_NVX;
-            break;
-        case VK_SHADER_STAGE_MISS_BIT_NVX:
-            this->active_shaders = VK_SHADER_STAGE_MISS_BIT_NVX;
-            break;
-        case VK_SHADER_STAGE_INTERSECTION_BIT_NVX:
-            this->active_shaders = VK_SHADER_STAGE_INTERSECTION_BIT_NVX;
-            break;
-        case VK_SHADER_STAGE_CALLABLE_BIT_NVX:
-            this->active_shaders |= VK_SHADER_STAGE_CALLABLE_BIT_NVX;
-            break;
-        default:
-            // TODO : Flag error
-            break;
+            case VK_SHADER_STAGE_RAYGEN_BIT_NVX:
+                this->active_shaders |= VK_SHADER_STAGE_RAYGEN_BIT_NVX;
+                break;
+            case VK_SHADER_STAGE_ANY_HIT_BIT_NVX:
+                this->active_shaders |= VK_SHADER_STAGE_ANY_HIT_BIT_NVX;
+                break;
+            case VK_SHADER_STAGE_CLOSEST_HIT_BIT_NVX:
+                this->active_shaders |= VK_SHADER_STAGE_CLOSEST_HIT_BIT_NVX;
+                break;
+            case VK_SHADER_STAGE_MISS_BIT_NVX:
+                this->active_shaders = VK_SHADER_STAGE_MISS_BIT_NVX;
+                break;
+            case VK_SHADER_STAGE_INTERSECTION_BIT_NVX:
+                this->active_shaders = VK_SHADER_STAGE_INTERSECTION_BIT_NVX;
+                break;
+            case VK_SHADER_STAGE_CALLABLE_BIT_NVX:
+                this->active_shaders |= VK_SHADER_STAGE_CALLABLE_BIT_NVX;
+                break;
+            default:
+                // TODO : Flag error
+                break;
         }
     }
 };
@@ -1104,6 +1105,7 @@ struct DeviceFeatures {
 };
 
 #ifdef VK_USE_PLATFORM_ANDROID_KHR
+
 // Enumerations of format and usage flags for Android opaque external memory blobs
 typedef enum AHardwareBufferFormat {
     AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM = 1,
@@ -1194,8 +1196,7 @@ Anonymous Enum 16{
   AHARDWAREBUFFER_USAGE_VENDOR_18 = 1ULL << 62,
   AHARDWAREBUFFER_USAGE_VENDOR_19 = 1ULL << 63
 }*/
-#endif // VK_USE_PLATFORM_ANDROID_KHR
-
+#endif  // VK_USE_PLATFORM_ANDROID_KHR
 
 // Fwd declarations of layer_data and helpers to look-up/validate state from layer_data maps
 namespace core_validation {
@@ -1267,7 +1268,9 @@ std::unordered_map<ImageSubresourcePair, IMAGE_LAYOUT_NODE> const *GetImageLayou
 std::unordered_map<VkBuffer, std::unique_ptr<BUFFER_STATE>> *GetBufferMap(layer_data *device_data);
 std::unordered_map<VkBufferView, std::unique_ptr<BUFFER_VIEW_STATE>> *GetBufferViewMap(layer_data *device_data);
 std::unordered_map<VkImageView, std::unique_ptr<IMAGE_VIEW_STATE>> *GetImageViewMap(layer_data *device_data);
-std::unordered_map<VkSamplerYcbcrConversion, uint64_t> *GetYcbcrConversionFormatMap(core_validation::layer_data *device_data);
+std::unordered_map<VkSamplerYcbcrConversion, uint64_t> *GetYcbcrConversionFormatMap(core_validation::layer_data *);
+std::unordered_set<uint64_t> *GetAHBExternalFormatsSet(core_validation::layer_data *);
+
 const DeviceExtensions *GetDeviceExtensions(const layer_data *);
 uint32_t GetApiVersion(const layer_data *);
 

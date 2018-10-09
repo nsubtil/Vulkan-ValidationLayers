@@ -22,9 +22,10 @@
 // Allow use of STL min and max functions in Windows
 #define NOMINMAX
 
+#include <cmath>
+#include <set>
 #include <sstream>
 #include <string>
-#include <cmath>
 
 #include "vk_enum_string_helper.h"
 #include "vk_layer_data.h"
@@ -518,7 +519,7 @@ bool ValidateBarrierLayoutToImageUsage(layer_data *device_data, const VkImageMem
                 msg_code = "VUID-VkImageMemoryBarrier-oldLayout-01213";
             }
             break;
-        case VK_IMAGE_LAYOUT_SHADING_RATE_OPTIMAL_NV :
+        case VK_IMAGE_LAYOUT_SHADING_RATE_OPTIMAL_NV:
             if ((usage_flags & VK_IMAGE_USAGE_SHADING_RATE_IMAGE_BIT_NV) == 0) {
                 msg_code = "VUID-VkImageMemoryBarrier-oldLayout-02088";
             }
@@ -998,6 +999,16 @@ bool PreCallValidateCreateImageANDROID(layer_data *device_data, const debug_repo
     }
 
     const VkExternalFormatANDROID *ext_fmt_android = lvl_find_in_chain<VkExternalFormatANDROID>(create_info->pNext);
+    if (ext_fmt_android) {
+        auto ahb_formats = GetAHBExternalFormatsSet(device_data);
+        if ((0 != ext_fmt_android->externalFormat) && (0 == ahb_formats->count(ext_fmt_android->externalFormat))) {
+            skip |= log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0,
+                            "VUID-VkExternalFormatANDROID-externalFormat-01894",
+                            "vkCreateImage: Chained VkExternalFormatANDROID struct contains a non-zero externalFormat which has "
+                            "not been previously retrieved by vkGetAndroidHardwareBufferPropertiesANDROID().");
+        }
+    }
+
     const VkExternalMemoryImageCreateInfo *emici = lvl_find_in_chain<VkExternalMemoryImageCreateInfo>(create_info->pNext);
     if (emici && (emici->handleTypes & VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID)) {
         bool failed_01892 = true;  // Assume failure
@@ -1677,7 +1688,7 @@ static inline VkExtent3D GetImageSubresourceExtent(const IMAGE_STATE *img, const
 
     if (img->createInfo.flags & VK_IMAGE_CREATE_CORNER_SAMPLED_BIT_NV) {
         extent.width = (0 == extent.width ? 0 : std::max(2U, 1 + ((extent.width - 1) >> mip)));
-        extent.height = (0 == extent.height ? 0 : std::max(2U, 1 + ((extent.height - 1)>> mip)));
+        extent.height = (0 == extent.height ? 0 : std::max(2U, 1 + ((extent.height - 1) >> mip)));
         extent.depth = (0 == extent.depth ? 0 : std::max(2U, 1 + ((extent.depth - 1) >> mip)));
     } else {
         extent.width = (0 == extent.width ? 0 : std::max(1U, extent.width >> mip));
@@ -3871,7 +3882,8 @@ bool PreCallValidateCreateImageView(layer_data *device_data, const VkImageViewCr
         skip |= ValidateImageUsageFlags(
             device_data, image_state,
             VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT |
-                VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SHADING_RATE_IMAGE_BIT_NV,
+                VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                VK_IMAGE_USAGE_SHADING_RATE_IMAGE_BIT_NV,
             false, kVUIDUndefined, "vkCreateImageView()",
             "VK_IMAGE_USAGE_[SAMPLED|STORAGE|COLOR_ATTACHMENT|DEPTH_STENCIL_ATTACHMENT|INPUT_ATTACHMENT|SHADING_RATE_IMAGE]_BIT");
         // If this isn't a sparse image, it needs to have memory backing it at CreateImageView time
