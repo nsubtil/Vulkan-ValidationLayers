@@ -10484,15 +10484,15 @@ static bool ValidateCreateRenderPass(const layer_data *dev_data, VkDevice device
         if (!ValidateAccessMaskPipelineStage(dependency.srcAccessMask, dependency.srcStageMask)) {
             vuid = use_rp2 ? "VUID-VkSubpassDependency2KHR-srcAccessMask-03088" : "VUID-VkSubpassDependency-srcAccessMask-00868";
             skip |= log_msg(dev_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, vuid,
-                            "%s: pDependencies[%u].srcAccessMask (0x%X) is not supported by srcStageMask (0x%X).", function_name, i,
-                            dependency.srcAccessMask, dependency.srcStageMask);
+                            "%s: pDependencies[%u].srcAccessMask (0x%" PRIx32 ") is not supported by srcStageMask (0x%" PRIx32 ").",
+                            function_name, i, dependency.srcAccessMask, dependency.srcStageMask);
         }
 
         if (!ValidateAccessMaskPipelineStage(dependency.dstAccessMask, dependency.dstStageMask)) {
             vuid = use_rp2 ? "VUID-VkSubpassDependency2KHR-dstAccessMask-03089" : "VUID-VkSubpassDependency-dstAccessMask-00869";
             skip |= log_msg(dev_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, vuid,
-                            "%s: pDependencies[%u].dstAccessMask (0x%X) is not supported by dstStageMask (0x%X).", function_name, i,
-                            dependency.dstAccessMask, dependency.dstStageMask);
+                            "%s: pDependencies[%u].dstAccessMask (0x%" PRIx32 ") is not supported by dstStageMask (0x%" PRIx32 ").",
+                            function_name, i, dependency.dstAccessMask, dependency.dstStageMask);
         }
     }
     if (!skip) {
