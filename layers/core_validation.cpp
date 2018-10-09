@@ -9936,12 +9936,16 @@ static bool CreatePassDAG(const layer_data *dev_data, RenderPassCreateVersion rp
     }
     for (uint32_t i = 0; i < pCreateInfo->dependencyCount; ++i) {
         const VkSubpassDependency2KHR &dependency = pCreateInfo->pDependencies[i];
+        VkPipelineStageFlags exclude_graphics_pipeline_stages =
+            ~(VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT | ExpandPipelineStageFlags(VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT));
+        VkPipelineStageFlagBits latest_src_stage = GetLogicallyLatestGraphicsPipelineStage(dependency.srcStageMask);
+        VkPipelineStageFlagBits earliest_dst_stage = GetLogicallyEarliestGraphicsPipelineStage(dependency.dstStageMask);
 
-        if (dependency.srcSubpass == dependency.dstSubpass &&
-            (dependency.srcStageMask &
-             ~(VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT | ExpandPipelineStageFlags(VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT))) != 0u &&
-            (dependency.dstStageMask &
-             ~(VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT | ExpandPipelineStageFlags(VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT))) != 0u) {
+        // This VU is actually generalised  to *any* pipeline - not just graphics - but only graphics render passes are
+        // currently supported by the spec - so only that pipeline is checked here.
+        // If that is ever relaxed, this check should be extended to cover those pipelines.
+        if (dependency.srcSubpass == dependency.dstSubpass && (dependency.srcStageMask & exclude_graphics_pipeline_stages) != 0u &&
+            (dependency.dstStageMask & exclude_graphics_pipeline_stages) != 0u) {
             vuid = use_rp2 ? "VUID-VkSubpassDependency2KHR-srcSubpass-02244" : "VUID-VkSubpassDependency-srcSubpass-01989";
             skip |= log_msg(
                 dev_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, vuid,
@@ -9954,14 +9958,17 @@ static bool CreatePassDAG(const layer_data *dev_data, RenderPassCreateVersion rp
                             i, dependency.srcSubpass);
         } else if (dependency.dstSubpass != VK_SUBPASS_EXTERNAL && (dependency.dstStageMask & VK_PIPELINE_STAGE_HOST_BIT)) {
             vuid = use_rp2 ? "VUID-VkSubpassDependency2KHR-dstSubpass-03079" : "VUID-VkSubpassDependency-dstSubpass-00859";
-            skip |= log_msg(
-                dev_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, vuid,
-                "Dependency %u specifies a dependency from subpass %u, but includes HOST_BIT in the destination stage mask.", i,
-                dependency.dstSubpass);
-        } else if (dependency.srcSubpass != VK_SUBPASS_EXTERNAL &&
-                   pCreateInfo->pSubpasses[dependency.srcSubpass].pipelineBindPoint == VK_PIPELINE_BIND_POINT_GRAPHICS &&
-                   (dependency.srcStageMask &
-                    ~(VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT | ExpandPipelineStageFlags(VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT))) != 0u) {
+            skip |=
+                log_msg(dev_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, vuid,
+                        "Dependency %u specifies a dependency to subpass %u, but includes HOST_BIT in the destination stage mask.",
+                        i, dependency.dstSubpass);
+        }
+        // These next two VUs are actually generalised  to *any* pipeline - not just graphics - but only graphics render passes are
+        // currently supported by the spec - so only that pipeline is checked here.
+        // If that is ever relaxed, these next two checks should be extended to cover those pipelines.
+        else if (dependency.srcSubpass != VK_SUBPASS_EXTERNAL &&
+                 pCreateInfo->pSubpasses[dependency.srcSubpass].pipelineBindPoint == VK_PIPELINE_BIND_POINT_GRAPHICS &&
+                 (dependency.srcStageMask & exclude_graphics_pipeline_stages) != 0u) {
             vuid =
                 use_rp2 ? "VUID-VkRenderPassCreateInfo2KHR-pDependencies-03054" : "VUID-VkRenderPassCreateInfo-pDependencies-00837";
             skip |= log_msg(dev_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, vuid,
@@ -9970,8 +9977,7 @@ static bool CreatePassDAG(const layer_data *dev_data, RenderPassCreateVersion rp
                             i, dependency.srcSubpass);
         } else if (dependency.dstSubpass != VK_SUBPASS_EXTERNAL &&
                    pCreateInfo->pSubpasses[dependency.dstSubpass].pipelineBindPoint == VK_PIPELINE_BIND_POINT_GRAPHICS &&
-                   (dependency.dstStageMask &
-                    ~(VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT | ExpandPipelineStageFlags(VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT))) != 0u) {
+                   (dependency.dstStageMask & exclude_graphics_pipeline_stages) != 0u) {
             vuid =
                 use_rp2 ? "VUID-VkRenderPassCreateInfo2KHR-pDependencies-03055" : "VUID-VkRenderPassCreateInfo-pDependencies-00838";
             skip |= log_msg(dev_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, vuid,
@@ -10024,7 +10030,7 @@ static bool CreatePassDAG(const layer_data *dev_data, RenderPassCreateVersion rp
                                 vuid, "Dependency %u specifies a self-dependency but has a non-zero view offset of %u", i,
                                 dependency.viewOffset);
             } else if ((dependency.dependencyFlags | VK_DEPENDENCY_VIEW_LOCAL_BIT) != dependency.dependencyFlags &&
-                       pCreateInfo->pSubpasses[dependency.srcSubpass].viewMask != 0) {
+                       pCreateInfo->pSubpasses[dependency.srcSubpass].viewMask > 1) {
                 vuid =
                     use_rp2 ? "VUID-VkRenderPassCreateInfo2KHR-pDependencies-03060" : "VUID-VkSubpassDependency-srcSubpass-00872";
                 skip |=
@@ -10034,15 +10040,13 @@ static bool CreatePassDAG(const layer_data *dev_data, RenderPassCreateVersion rp
                             i, dependency.srcSubpass);
             } else if ((HasNonFramebufferStagePipelineStageFlags(dependency.srcStageMask) ||
                         HasNonFramebufferStagePipelineStageFlags(dependency.dstStageMask)) &&
-                       (GetGraphicsPipelineStageLogicalOrdinal(GetLogicallyLatestGraphicsPipelineStage(dependency.srcStageMask)) >
-                        GetGraphicsPipelineStageLogicalOrdinal(
-                            GetLogicallyEarliestGraphicsPipelineStage(dependency.dstStageMask)))) {
+                       (GetGraphicsPipelineStageLogicalOrdinal(latest_src_stage) >
+                        GetGraphicsPipelineStageLogicalOrdinal(earliest_dst_stage))) {
                 vuid = use_rp2 ? "VUID-VkSubpassDependency2KHR-srcSubpass-03087" : "VUID-VkSubpassDependency-srcSubpass-00867";
                 skip |= log_msg(
                     dev_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, vuid,
                     "Dependency %u specifies a self-dependency from logically-later stage (%s) to a logically-earlier stage (%s).",
-                    i, string_VkPipelineStageFlagBits(GetLogicallyLatestGraphicsPipelineStage(dependency.srcStageMask)),
-                    string_VkPipelineStageFlagBits(GetLogicallyEarliestGraphicsPipelineStage(dependency.dstStageMask)));
+                    i, string_VkPipelineStageFlagBits(latest_src_stage), string_VkPipelineStageFlagBits(earliest_dst_stage));
             } else {
                 self_dependencies[dependency.srcSubpass].push_back(i);
             }
@@ -10220,7 +10224,8 @@ static bool ValidateRenderpassAttachmentUsage(const layer_data *dev_data, Render
                         skip |=
                             log_msg(dev_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT,
                                     0, "VUID-VkSubpassDescription2KHR-aspectMask-03175",
-                                    "%s:  Input attachment (%d) aspect mask is invalid.", function_name, j);
+                                    "%s:  Input attachment (%d) aspect mask (0x%" PRIx32 ")is invalid.", function_name, j,
+                                    attachment_ref.aspectMask);
                     }
                 }
             }
@@ -10263,6 +10268,16 @@ static bool ValidateRenderpassAttachmentUsage(const layer_data *dev_data, Render
                                         string_VkSampleCountFlagBits(pCreateInfo->pAttachments[attachment_ref.attachment].samples));
                     }
                 }
+            }
+        }
+
+        if (subpass.pDepthStencilAttachment) {
+            skip |= ValidateAttachmentIndex(dev_data, rp_version, subpass.pDepthStencilAttachment->attachment,
+                                            pCreateInfo->attachmentCount, "Depth");
+            if (!skip && subpass.pDepthStencilAttachment->attachment != VK_ATTACHMENT_UNUSED) {
+                skip |= AddAttachmentUse(dev_data, rp_version, i, attachment_uses, attachment_layouts,
+                                         subpass.pDepthStencilAttachment->attachment, ATTACHMENT_DEPTH,
+                                         subpass.pDepthStencilAttachment->layout);
             }
         }
 
@@ -10361,12 +10376,6 @@ static bool ValidateRenderpassAttachmentUsage(const layer_data *dev_data, Render
                     }
                 }
             }
-        }
-
-        if (!skip && subpass.pDepthStencilAttachment && subpass.pDepthStencilAttachment->attachment != VK_ATTACHMENT_UNUSED) {
-            skip |= AddAttachmentUse(dev_data, rp_version, i, attachment_uses, attachment_layouts,
-                                     subpass.pDepthStencilAttachment->attachment, ATTACHMENT_DEPTH,
-                                     subpass.pDepthStencilAttachment->layout);
         }
     }
     return skip;
