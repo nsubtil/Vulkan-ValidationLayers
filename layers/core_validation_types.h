@@ -30,6 +30,7 @@
 #include "vk_layer_logging.h"
 #include "vk_object_types.h"
 #include "vk_extension_helper.h"
+#include "convert_to_renderpass2.h"
 #include <atomic>
 #include <functional>
 #include <map>
@@ -420,6 +421,7 @@ struct RENDER_PASS_STATE : public BASE_NODE {
     std::unordered_map<uint32_t, bool> attachment_first_read;
 
     RENDER_PASS_STATE(VkRenderPassCreateInfo2KHR const *pCreateInfo) : createInfo(pCreateInfo) {}
+    RENDER_PASS_STATE(VkRenderPassCreateInfo const *pCreateInfo) { ConvertVkRenderPassCreateInfoToV2KHR(pCreateInfo, &createInfo); }
 };
 
 // vkCmd tracking -- complete as of header 1.0.68

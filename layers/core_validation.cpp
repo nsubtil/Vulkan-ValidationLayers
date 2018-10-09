@@ -10372,8 +10372,8 @@ static void MarkAttachmentFirstUse(RENDER_PASS_STATE *render_pass, uint32_t inde
     if (!render_pass->attachment_first_read.count(index)) render_pass->attachment_first_read[index] = is_read;
 }
 
-static bool PreCallValidateCreateRenderPass(const layer_data *dev_data, VkDevice device, RenderPassCreateVersion rp_version,
-                                            const VkRenderPassCreateInfo2KHR *pCreateInfo, RENDER_PASS_STATE *render_pass) {
+static bool ValidateCreateRenderPass(const layer_data *dev_data, VkDevice device, RenderPassCreateVersion rp_version,
+                                     const VkRenderPassCreateInfo2KHR *pCreateInfo, RENDER_PASS_STATE *render_pass) {
     bool skip = false;
     const bool use_rp2 = (rp_version == RENDER_PASS_VERSION_2);
     const char *vuid;
@@ -10475,50 +10475,9 @@ static bool PreCallValidateCreateRenderPass(const layer_data *dev_data, VkDevice
     return skip;
 }
 
-// Style note:
-// Use of rvalue reference exceeds reccommended usage of rvalue refs in google style guide, but intentionally forces caller to move
-// or copy.  This is clearer than passing a pointer to shared_ptr and avoids the atomic increment/decrement of shared_ptr copy
-// construction or assignment.
-static void PostCallRecordCreateRenderPass(layer_data *dev_data, const VkRenderPassCreateInfo2KHR *pCreateInfo,
-                                           const VkRenderPass render_pass_handle,
-                                           std::shared_ptr<RENDER_PASS_STATE> &&render_pass) {
-    render_pass->renderPass = render_pass_handle;
-    for (uint32_t i = 0; i < pCreateInfo->subpassCount; ++i) {
-        const VkSubpassDescription2KHR &subpass = pCreateInfo->pSubpasses[i];
-        for (uint32_t j = 0; j < subpass.colorAttachmentCount; ++j) {
-            MarkAttachmentFirstUse(render_pass.get(), subpass.pColorAttachments[j].attachment, false);
-
-            // resolve attachments are considered to be written
-            if (subpass.pResolveAttachments) {
-                MarkAttachmentFirstUse(render_pass.get(), subpass.pResolveAttachments[j].attachment, false);
-            }
-        }
-        if (subpass.pDepthStencilAttachment) {
-            MarkAttachmentFirstUse(render_pass.get(), subpass.pDepthStencilAttachment->attachment, false);
-        }
-        for (uint32_t j = 0; j < subpass.inputAttachmentCount; ++j) {
-            MarkAttachmentFirstUse(render_pass.get(), subpass.pInputAttachments[j].attachment, true);
-        }
-    }
-
-    // Even though render_pass is an rvalue-ref parameter, still must move s.t. move assignment is invoked.
-    dev_data->renderPassMap[render_pass_handle] = std::move(render_pass);
-}
-
-VKAPI_ATTR VkResult VKAPI_CALL CreateRenderPass(VkDevice device, const VkRenderPassCreateInfo *pCreateInfo,
-                                                const VkAllocationCallbacks *pAllocator, VkRenderPass *pRenderPass) {
+static bool PreCallValidateCreateRenderPass(const layer_data *dev_data, VkDevice device, const VkRenderPassCreateInfo *pCreateInfo,
+                                            RENDER_PASS_STATE *render_pass) {
     bool skip = false;
-
-    safe_VkRenderPassCreateInfo2KHR convertedCreateInfo;
-    ConvertVkRenderPassCreateInfoToV2KHR(pCreateInfo, &convertedCreateInfo);
-    VkRenderPassCreateInfo2KHR *pCreateInfo2 = convertedCreateInfo.ptr();
-
-    layer_data *dev_data = GetLayerDataPtr(get_dispatch_key(device), layer_data_map);
-    // If we fail, this will act like a unique_ptr and auto-cleanup, as we aren't saving it anywhere
-    auto render_pass = std::make_shared<RENDER_PASS_STATE>(pCreateInfo2);
-
-    unique_lock_t lock(global_lock);
-
     // Handle extension structs from KHR_multiview and KHR_maintenance2 that can only be validated for RP1 (indices out of bounds)
     const VkRenderPassMultiviewCreateInfo *pMultiviewInfo = lvl_find_in_chain<VkRenderPassMultiviewCreateInfo>(pCreateInfo->pNext);
     if (pMultiviewInfo) {
@@ -10556,7 +10515,64 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateRenderPass(VkDevice device, const VkRenderP
         }
     }
 
-    skip = PreCallValidateCreateRenderPass(dev_data, device, RENDER_PASS_VERSION_1, pCreateInfo2, render_pass.get());
+    if (!skip) {
+        safe_VkRenderPassCreateInfo2KHR convertedCreateInfo;
+        ConvertVkRenderPassCreateInfoToV2KHR(pCreateInfo, &convertedCreateInfo);
+
+        skip |= ValidateCreateRenderPass(dev_data, device, RENDER_PASS_VERSION_1, convertedCreateInfo.ptr(), render_pass);
+    }
+
+    return skip;
+}
+
+// Style note:
+// Use of rvalue reference exceeds reccommended usage of rvalue refs in google style guide, but intentionally forces caller to move
+// or copy.  This is clearer than passing a pointer to shared_ptr and avoids the atomic increment/decrement of shared_ptr copy
+// construction or assignment.
+static void RecordCreateRenderPass(layer_data *dev_data, const VkRenderPassCreateInfo2KHR *pCreateInfo,
+                                   const VkRenderPass render_pass_handle, std::shared_ptr<RENDER_PASS_STATE> &&render_pass) {
+    render_pass->renderPass = render_pass_handle;
+    for (uint32_t i = 0; i < pCreateInfo->subpassCount; ++i) {
+        const VkSubpassDescription2KHR &subpass = pCreateInfo->pSubpasses[i];
+        for (uint32_t j = 0; j < subpass.colorAttachmentCount; ++j) {
+            MarkAttachmentFirstUse(render_pass.get(), subpass.pColorAttachments[j].attachment, false);
+
+            // resolve attachments are considered to be written
+            if (subpass.pResolveAttachments) {
+                MarkAttachmentFirstUse(render_pass.get(), subpass.pResolveAttachments[j].attachment, false);
+            }
+        }
+        if (subpass.pDepthStencilAttachment) {
+            MarkAttachmentFirstUse(render_pass.get(), subpass.pDepthStencilAttachment->attachment, false);
+        }
+        for (uint32_t j = 0; j < subpass.inputAttachmentCount; ++j) {
+            MarkAttachmentFirstUse(render_pass.get(), subpass.pInputAttachments[j].attachment, true);
+        }
+    }
+
+    // Even though render_pass is an rvalue-ref parameter, still must move s.t. move assignment is invoked.
+    dev_data->renderPassMap[render_pass_handle] = std::move(render_pass);
+}
+
+static void PostCallRecordCreateRenderPass(layer_data *dev_data, const VkRenderPassCreateInfo *pCreateInfo,
+                                           const VkRenderPass render_pass_handle,
+                                           std::shared_ptr<RENDER_PASS_STATE> &&render_pass) {
+    safe_VkRenderPassCreateInfo2KHR convertedCreateInfo;
+    ConvertVkRenderPassCreateInfoToV2KHR(pCreateInfo, &convertedCreateInfo);
+    RecordCreateRenderPass(dev_data, convertedCreateInfo.ptr(), render_pass_handle, std::move(render_pass));
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL CreateRenderPass(VkDevice device, const VkRenderPassCreateInfo *pCreateInfo,
+                                                const VkAllocationCallbacks *pAllocator, VkRenderPass *pRenderPass) {
+    bool skip = false;
+
+    layer_data *dev_data = GetLayerDataPtr(get_dispatch_key(device), layer_data_map);
+    // If we fail, this will act like a unique_ptr and auto-cleanup, as we aren't saving it anywhere
+    auto render_pass = std::make_shared<RENDER_PASS_STATE>(pCreateInfo);
+
+    unique_lock_t lock(global_lock);
+
+    skip = PreCallValidateCreateRenderPass(dev_data, device, pCreateInfo, render_pass.get());
     lock.unlock();
 
     if (skip) {
@@ -10567,9 +10583,20 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateRenderPass(VkDevice device, const VkRenderP
 
     if (VK_SUCCESS == result) {
         lock.lock();
-        PostCallRecordCreateRenderPass(dev_data, pCreateInfo2, *pRenderPass, std::move(render_pass));
+        PostCallRecordCreateRenderPass(dev_data, pCreateInfo, *pRenderPass, std::move(render_pass));
     }
     return result;
+}
+
+static bool PreCallValidateCreateRenderPass2KHR(const layer_data *dev_data, VkDevice device,
+                                                const VkRenderPassCreateInfo2KHR *pCreateInfo, RENDER_PASS_STATE *render_pass) {
+    return ValidateCreateRenderPass(dev_data, device, RENDER_PASS_VERSION_2, pCreateInfo, render_pass);
+}
+
+static void PostCallRecordCreateRenderPass2KHR(layer_data *dev_data, const VkRenderPassCreateInfo2KHR *pCreateInfo,
+                                               const VkRenderPass render_pass_handle,
+                                               std::shared_ptr<RENDER_PASS_STATE> &&render_pass) {
+    RecordCreateRenderPass(dev_data, pCreateInfo, render_pass_handle, std::move(render_pass));
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL CreateRenderPass2KHR(VkDevice device, const VkRenderPassCreateInfo2KHR *pCreateInfo,
@@ -10582,7 +10609,7 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateRenderPass2KHR(VkDevice device, const VkRen
 
     unique_lock_t lock(global_lock);
 
-    skip = PreCallValidateCreateRenderPass(dev_data, device, RENDER_PASS_VERSION_2, pCreateInfo, render_pass.get());
+    skip = PreCallValidateCreateRenderPass2KHR(dev_data, device, pCreateInfo, render_pass.get());
     lock.unlock();
 
     if (skip) {
@@ -10593,7 +10620,7 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateRenderPass2KHR(VkDevice device, const VkRen
 
     if (VK_SUCCESS == result) {
         lock.lock();
-        PostCallRecordCreateRenderPass(dev_data, pCreateInfo, *pRenderPass, std::move(render_pass));
+        PostCallRecordCreateRenderPass2KHR(dev_data, pCreateInfo, *pRenderPass, std::move(render_pass));
     }
     return result;
 }
@@ -10642,9 +10669,11 @@ static bool FormatSpecificLoadAndStoreOpSettings(VkFormat format, T color_depth_
     return ((check_color_depth_load_op && (color_depth_op == op)) || (check_stencil_load_op && (stencil_op == op)));
 }
 
-static bool PreCallValidateCmdBeginRenderPass(layer_data *dev_data, RenderPassCreateVersion rp_version,
-                                              const RENDER_PASS_STATE *render_pass_state, GLOBAL_CB_NODE *cb_state,
-                                              const FRAMEBUFFER_STATE *framebuffer, const VkRenderPassBeginInfo *pRenderPassBegin) {
+static bool PreCallValidateCmdBeginRenderPass(layer_data *dev_data, GLOBAL_CB_NODE *cb_state, RenderPassCreateVersion rp_version,
+                                              const VkRenderPassBeginInfo *pRenderPassBegin) {
+    auto render_pass_state = pRenderPassBegin ? GetRenderPassState(dev_data, pRenderPassBegin->renderPass) : nullptr;
+    auto framebuffer = pRenderPassBegin ? GetFramebufferState(dev_data, pRenderPassBegin->framebuffer) : nullptr;
+
     assert(cb_state);
     bool skip = false;
     const bool use_rp2 = (rp_version == RENDER_PASS_VERSION_2);
@@ -10728,9 +10757,11 @@ static bool PreCallValidateCmdBeginRenderPass(layer_data *dev_data, RenderPassCr
     return skip;
 }
 
-static void PreCallRecordCmdBeginRenderPass(layer_data *dev_data, GLOBAL_CB_NODE *cb_state, FRAMEBUFFER_STATE *framebuffer,
-                                            RENDER_PASS_STATE *render_pass_state, const VkRenderPassBeginInfo *pRenderPassBegin,
-                                            const VkSubpassContents contents) {
+static void PreCallRecordCmdBeginRenderPass(layer_data *dev_data, GLOBAL_CB_NODE *cb_state,
+                                            const VkRenderPassBeginInfo *pRenderPassBegin, const VkSubpassContents contents) {
+    auto render_pass_state = pRenderPassBegin ? GetRenderPassState(dev_data, pRenderPassBegin->renderPass) : nullptr;
+    auto framebuffer = pRenderPassBegin ? GetFramebufferState(dev_data, pRenderPassBegin->framebuffer) : nullptr;
+
     assert(cb_state);
     if (render_pass_state) {
         cb_state->activeFramebuffer = pRenderPassBegin->framebuffer;
@@ -10756,15 +10787,13 @@ VKAPI_ATTR void VKAPI_CALL CmdBeginRenderPass(VkCommandBuffer commandBuffer, con
     layer_data *dev_data = GetLayerDataPtr(get_dispatch_key(commandBuffer), layer_data_map);
     unique_lock_t lock(global_lock);
     GLOBAL_CB_NODE *cb_state = GetCBNode(dev_data, commandBuffer);
-    auto render_pass_state = pRenderPassBegin ? GetRenderPassState(dev_data, pRenderPassBegin->renderPass) : nullptr;
-    auto framebuffer = pRenderPassBegin ? GetFramebufferState(dev_data, pRenderPassBegin->framebuffer) : nullptr;
     if (cb_state) {
-        skip |= PreCallValidateCmdBeginRenderPass(dev_data, RENDER_PASS_VERSION_1, render_pass_state, cb_state, framebuffer,
-                                                  pRenderPassBegin);
+        skip |= PreCallValidateCmdBeginRenderPass(dev_data, cb_state, RENDER_PASS_VERSION_1, pRenderPassBegin);
         if (!skip) {
-            PreCallRecordCmdBeginRenderPass(dev_data, cb_state, framebuffer, render_pass_state, pRenderPassBegin, contents);
+            PreCallRecordCmdBeginRenderPass(dev_data, cb_state, pRenderPassBegin, contents);
         }
     }
+
     lock.unlock();
     if (!skip) {
         dev_data->dispatch_table.CmdBeginRenderPass(commandBuffer, pRenderPassBegin, contents);
@@ -10777,21 +10806,20 @@ VKAPI_ATTR void VKAPI_CALL CmdBeginRenderPass2KHR(VkCommandBuffer commandBuffer,
     layer_data *dev_data = GetLayerDataPtr(get_dispatch_key(commandBuffer), layer_data_map);
     unique_lock_t lock(global_lock);
     GLOBAL_CB_NODE *cb_state = GetCBNode(dev_data, commandBuffer);
-    auto render_pass_state = pRenderPassBegin ? GetRenderPassState(dev_data, pRenderPassBegin->renderPass) : nullptr;
-    auto framebuffer = pRenderPassBegin ? GetFramebufferState(dev_data, pRenderPassBegin->framebuffer) : nullptr;
     if (cb_state) {
-        skip |= PreCallValidateCmdBeginRenderPass(dev_data, RENDER_PASS_VERSION_2, render_pass_state, cb_state, framebuffer,
-                                                  pRenderPassBegin);
-        PreCallRecordCmdBeginRenderPass(dev_data, cb_state, framebuffer, render_pass_state, pRenderPassBegin,
-                                        pSubpassBeginInfo->contents);
+        skip |= PreCallValidateCmdBeginRenderPass(dev_data, cb_state, RENDER_PASS_VERSION_2, pRenderPassBegin);
+        if (!skip) {
+            PreCallRecordCmdBeginRenderPass(dev_data, cb_state, pRenderPassBegin, pSubpassBeginInfo->contents);
+        }
     }
+
     lock.unlock();
     if (!skip) {
         dev_data->dispatch_table.CmdBeginRenderPass(commandBuffer, pRenderPassBegin, pSubpassBeginInfo->contents);
     }
 }
 
-static bool PreCallValidateCmdNextSubpass(layer_data *dev_data, RenderPassCreateVersion rp_version, GLOBAL_CB_NODE *cb_state,
+static bool PreCallValidateCmdNextSubpass(layer_data *dev_data, GLOBAL_CB_NODE *cb_state, RenderPassCreateVersion rp_version,
                                           VkCommandBuffer commandBuffer) {
     bool skip = false;
     const bool use_rp2 = (rp_version == RENDER_PASS_VERSION_2);
@@ -10832,7 +10860,7 @@ VKAPI_ATTR void VKAPI_CALL CmdNextSubpass(VkCommandBuffer commandBuffer, VkSubpa
     unique_lock_t lock(global_lock);
     GLOBAL_CB_NODE *pCB = GetCBNode(dev_data, commandBuffer);
     if (pCB) {
-        skip |= PreCallValidateCmdNextSubpass(dev_data, RENDER_PASS_VERSION_1, pCB, commandBuffer);
+        skip |= PreCallValidateCmdNextSubpass(dev_data, pCB, RENDER_PASS_VERSION_1, commandBuffer);
     }
     lock.unlock();
 
@@ -10853,7 +10881,7 @@ VKAPI_ATTR void VKAPI_CALL CmdNextSubpass2KHR(VkCommandBuffer commandBuffer, con
     unique_lock_t lock(global_lock);
     GLOBAL_CB_NODE *pCB = GetCBNode(dev_data, commandBuffer);
     if (pCB) {
-        skip |= PreCallValidateCmdNextSubpass(dev_data, RENDER_PASS_VERSION_2, pCB, commandBuffer);
+        skip |= PreCallValidateCmdNextSubpass(dev_data, pCB, RENDER_PASS_VERSION_2, commandBuffer);
     }
     lock.unlock();
 
@@ -10866,7 +10894,7 @@ VKAPI_ATTR void VKAPI_CALL CmdNextSubpass2KHR(VkCommandBuffer commandBuffer, con
         PostCallRecordCmdNextSubpass(dev_data, pCB, pSubpassBeginInfo->contents);
     }
 }
-static bool PreCallValidateCmdEndRenderPass(layer_data *dev_data, RenderPassCreateVersion rp_version, GLOBAL_CB_NODE *cb_state,
+static bool PreCallValidateCmdEndRenderPass(layer_data *dev_data, GLOBAL_CB_NODE *cb_state, RenderPassCreateVersion rp_version,
                                             VkCommandBuffer commandBuffer) {
     bool skip = false;
 
@@ -10911,7 +10939,7 @@ VKAPI_ATTR void VKAPI_CALL CmdEndRenderPass(VkCommandBuffer commandBuffer) {
     unique_lock_t lock(global_lock);
     auto pCB = GetCBNode(dev_data, commandBuffer);
     if (pCB) {
-        skip |= PreCallValidateCmdEndRenderPass(dev_data, RENDER_PASS_VERSION_1, pCB, commandBuffer);
+        skip |= PreCallValidateCmdEndRenderPass(dev_data, pCB, RENDER_PASS_VERSION_1, commandBuffer);
     }
     lock.unlock();
 
@@ -10931,7 +10959,7 @@ VKAPI_ATTR void VKAPI_CALL CmdEndRenderPass2KHR(VkCommandBuffer commandBuffer, c
     unique_lock_t lock(global_lock);
     auto pCB = GetCBNode(dev_data, commandBuffer);
     if (pCB) {
-        skip |= PreCallValidateCmdEndRenderPass(dev_data, RENDER_PASS_VERSION_2, pCB, commandBuffer);
+        skip |= PreCallValidateCmdEndRenderPass(dev_data, pCB, RENDER_PASS_VERSION_2, commandBuffer);
     }
     lock.unlock();
 
