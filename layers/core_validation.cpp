@@ -10183,8 +10183,6 @@ static bool ValidateRenderpassAttachmentUsage(const layer_data *dev_data, Render
             if (attachment_ref.attachment != VK_ATTACHMENT_UNUSED) {
                 skip |=
                     ValidateAttachmentIndex(dev_data, rp_version, attachment_ref.attachment, pCreateInfo->attachmentCount, "Input");
-                skip |= AddAttachmentUse(dev_data, rp_version, i, attachment_uses, attachment_layouts, attachment_ref.attachment,
-                                         ATTACHMENT_INPUT, attachment_ref.layout);
 
                 if (attachment_ref.aspectMask & VK_IMAGE_ASPECT_METADATA_BIT) {
                     vuid =
@@ -10195,7 +10193,10 @@ static bool ValidateRenderpassAttachmentUsage(const layer_data *dev_data, Render
                         function_name, i, j);
                 }
 
-                if (!skip) {
+                if (attachment_ref.attachment < pCreateInfo->attachmentCount) {
+                    skip |= AddAttachmentUse(dev_data, rp_version, i, attachment_uses, attachment_layouts,
+                                             attachment_ref.attachment, ATTACHMENT_INPUT, attachment_ref.layout);
+
                     vuid = use_rp2 ? kVUID_Core_DrawState_InvalidRenderpass : "VUID-VkRenderPassCreateInfo-pNext-01963";
                     skip |= ValidateImageAspectMask(dev_data, VK_NULL_HANDLE,
                                                     pCreateInfo->pAttachments[attachment_ref.attachment].format,
@@ -10238,8 +10239,10 @@ static bool ValidateRenderpassAttachmentUsage(const layer_data *dev_data, Render
                                 vuid, "%s:  Preserve attachment (%d) must not be VK_ATTACHMENT_UNUSED.", function_name, j);
             } else {
                 skip |= ValidateAttachmentIndex(dev_data, rp_version, attachment, pCreateInfo->attachmentCount, "Preserve");
-                skip |= AddAttachmentUse(dev_data, rp_version, i, attachment_uses, attachment_layouts, attachment,
-                                         ATTACHMENT_PRESERVE, VkImageLayout(0) /* preserve doesn't have any layout */);
+                if (attachment < pCreateInfo->attachmentCount) {
+                    skip |= AddAttachmentUse(dev_data, rp_version, i, attachment_uses, attachment_layouts, attachment,
+                                             ATTACHMENT_PRESERVE, VkImageLayout(0) /* preserve doesn't have any layout */);
+                }
             }
         }
 
@@ -10251,32 +10254,38 @@ static bool ValidateRenderpassAttachmentUsage(const layer_data *dev_data, Render
                 if (attachment_ref.attachment != VK_ATTACHMENT_UNUSED) {
                     skip |= ValidateAttachmentIndex(dev_data, rp_version, attachment_ref.attachment, pCreateInfo->attachmentCount,
                                                     "Resolve");
-                    skip |= AddAttachmentUse(dev_data, rp_version, i, attachment_uses, attachment_layouts,
-                                             attachment_ref.attachment, ATTACHMENT_RESOLVE, attachment_ref.layout);
 
-                    subpass_performs_resolve = true;
+                    if (attachment_ref.attachment < pCreateInfo->attachmentCount) {
+                        skip |= AddAttachmentUse(dev_data, rp_version, i, attachment_uses, attachment_layouts,
+                                                 attachment_ref.attachment, ATTACHMENT_RESOLVE, attachment_ref.layout);
 
-                    if (!skip && pCreateInfo->pAttachments[attachment_ref.attachment].samples != VK_SAMPLE_COUNT_1_BIT) {
-                        vuid = use_rp2 ? "VUID-VkSubpassDescription2KHR-pResolveAttachments-03067"
-                                       : "VUID-VkSubpassDescription-pResolveAttachments-00849";
-                        skip |= log_msg(dev_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT,
+                        subpass_performs_resolve = true;
+
+                        if (pCreateInfo->pAttachments[attachment_ref.attachment].samples != VK_SAMPLE_COUNT_1_BIT) {
+                            vuid = use_rp2 ? "VUID-VkSubpassDescription2KHR-pResolveAttachments-03067"
+                                           : "VUID-VkSubpassDescription-pResolveAttachments-00849";
+                            skip |=
+                                log_msg(dev_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT,
                                         VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, vuid,
                                         "%s:  Subpass %u requests multisample resolve into attachment %u, which must "
                                         "have VK_SAMPLE_COUNT_1_BIT but has %s.",
                                         function_name, i, attachment_ref.attachment,
                                         string_VkSampleCountFlagBits(pCreateInfo->pAttachments[attachment_ref.attachment].samples));
+                        }
                     }
                 }
             }
         }
 
         if (subpass.pDepthStencilAttachment) {
-            skip |= ValidateAttachmentIndex(dev_data, rp_version, subpass.pDepthStencilAttachment->attachment,
-                                            pCreateInfo->attachmentCount, "Depth");
-            if (!skip && subpass.pDepthStencilAttachment->attachment != VK_ATTACHMENT_UNUSED) {
-                skip |= AddAttachmentUse(dev_data, rp_version, i, attachment_uses, attachment_layouts,
-                                         subpass.pDepthStencilAttachment->attachment, ATTACHMENT_DEPTH,
-                                         subpass.pDepthStencilAttachment->layout);
+            if (subpass.pDepthStencilAttachment->attachment != VK_ATTACHMENT_UNUSED) {
+                skip |= ValidateAttachmentIndex(dev_data, rp_version, subpass.pDepthStencilAttachment->attachment,
+                                                pCreateInfo->attachmentCount, "Depth");
+                if (subpass.pDepthStencilAttachment->attachment < pCreateInfo->attachmentCount) {
+                    skip |= AddAttachmentUse(dev_data, rp_version, i, attachment_uses, attachment_layouts,
+                                             subpass.pDepthStencilAttachment->attachment, ATTACHMENT_DEPTH,
+                                             subpass.pDepthStencilAttachment->layout);
+                }
             }
         }
 
@@ -10284,7 +10293,7 @@ static bool ValidateRenderpassAttachmentUsage(const layer_data *dev_data, Render
         for (uint32_t j = 0; j < subpass.colorAttachmentCount; ++j) {
             auto const &attachment_ref = subpass.pColorAttachments[j];
             skip |= ValidateAttachmentIndex(dev_data, rp_version, attachment_ref.attachment, pCreateInfo->attachmentCount, "Color");
-            if (!skip && attachment_ref.attachment != VK_ATTACHMENT_UNUSED) {
+            if (attachment_ref.attachment != VK_ATTACHMENT_UNUSED && attachment_ref.attachment < pCreateInfo->attachmentCount) {
                 skip |= AddAttachmentUse(dev_data, rp_version, i, attachment_uses, attachment_layouts, attachment_ref.attachment,
                                          ATTACHMENT_COLOR, attachment_ref.layout);
 
@@ -10316,8 +10325,8 @@ static bool ValidateRenderpassAttachmentUsage(const layer_data *dev_data, Render
                                     function_name, i, attachment_ref.attachment);
                 }
 
-                if (!skip && subpass.pDepthStencilAttachment &&
-                    subpass.pDepthStencilAttachment->attachment != VK_ATTACHMENT_UNUSED) {
+                if (subpass.pDepthStencilAttachment && subpass.pDepthStencilAttachment->attachment != VK_ATTACHMENT_UNUSED &&
+                    subpass.pDepthStencilAttachment->attachment < pCreateInfo->attachmentCount) {
                     const auto depth_stencil_sample_count =
                         pCreateInfo->pAttachments[subpass.pDepthStencilAttachment->attachment].samples;
 
@@ -10333,6 +10342,7 @@ static bool ValidateRenderpassAttachmentUsage(const layer_data *dev_data, Render
                                         function_name, i, j,
                                         string_VkSampleCountFlagBits(pCreateInfo->pAttachments[attachment_ref.attachment].samples),
                                         string_VkSampleCountFlagBits(depth_stencil_sample_count));
+                            break;
                         }
                     }
 
@@ -10344,15 +10354,17 @@ static bool ValidateRenderpassAttachmentUsage(const layer_data *dev_data, Render
                         skip |= log_msg(
                             dev_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, vuid,
                             "%s:  Subpass %u attempts to render to use a depth/stencil attachment with sample count that differs "
-                            "from the color attachments."
+                            "from color attachment %u."
                             "The depth attachment ref has sample count %s, whereas color attachment ref %u has sample count %s.",
-                            function_name, i, string_VkSampleCountFlagBits(depth_stencil_sample_count), j,
+                            function_name, i, j, string_VkSampleCountFlagBits(depth_stencil_sample_count), j,
                             string_VkSampleCountFlagBits(current_sample_count));
+                        break;
                     }
                 }
             }
 
-            if (!skip && subpass_performs_resolve && subpass.pResolveAttachments[j].attachment != VK_ATTACHMENT_UNUSED) {
+            if (subpass_performs_resolve && subpass.pResolveAttachments[j].attachment != VK_ATTACHMENT_UNUSED &&
+                subpass.pResolveAttachments[j].attachment < pCreateInfo->attachmentCount) {
                 if (attachment_ref.attachment == VK_ATTACHMENT_UNUSED) {
                     vuid = use_rp2 ? "VUID-VkSubpassDescription2KHR-pResolveAttachments-03065"
                                    : "VUID-VkSubpassDescription-pResolveAttachments-00847";

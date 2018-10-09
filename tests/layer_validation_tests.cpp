@@ -4871,6 +4871,7 @@ TEST_F(VkLayerTest, RenderPassCreateAttachmentsMisc) {
     attachments[subpass.pColorAttachments[1].attachment].samples = attachments[subpass.pColorAttachments[0].attachment].samples;
     // Test sample count mismatch between color buffers and depth buffer
     attachments[subpass.pDepthStencilAttachment->attachment].samples = VK_SAMPLE_COUNT_8_BIT;
+    subpass.colorAttachmentCount = 1;
     m_errorMonitor->SetDesiredFailureMsg(VK_DEBUG_REPORT_ERROR_BIT_EXT, "VUID-VkSubpassDescription-pDepthStencilAttachment-01418");
     err = vkCreateRenderPass(m_device->device(), &rpci, nullptr, &rp);
     m_errorMonitor->VerifyFound();
@@ -4886,6 +4887,7 @@ TEST_F(VkLayerTest, RenderPassCreateAttachmentsMisc) {
         if (err == VK_SUCCESS) vkDestroyRenderPass(m_device->device(), rp, nullptr);
     }
     attachments[subpass.pDepthStencilAttachment->attachment].samples = attachments[subpass.pColorAttachments[0].attachment].samples;
+    subpass.colorAttachmentCount = (uint32_t)color.size();
     // Test resolve attachment with UNUSED color attachment
     color[0].attachment = VK_ATTACHMENT_UNUSED;
     m_errorMonitor->SetDesiredFailureMsg(VK_DEBUG_REPORT_ERROR_BIT_EXT, "VUID-VkSubpassDescription-pResolveAttachments-00847");
@@ -4905,7 +4907,8 @@ TEST_F(VkLayerTest, RenderPassCreateAttachmentsMisc) {
     color[0].attachment = 1;
     // Test resolve from a single-sampled color attachment
     attachments[subpass.pColorAttachments[0].attachment].samples = VK_SAMPLE_COUNT_1_BIT;
-    attachments[subpass.pColorAttachments[1].attachment].samples = VK_SAMPLE_COUNT_1_BIT;  // avoid mismatch (00337)
+    subpass.colorAttachmentCount = 1;           // avoid mismatch (00337), and avoid double report
+    subpass.pDepthStencilAttachment = nullptr;  // avoid mismatch (01418)
     m_errorMonitor->SetDesiredFailureMsg(VK_DEBUG_REPORT_ERROR_BIT_EXT, "VUID-VkSubpassDescription-pResolveAttachments-00848");
     err = vkCreateRenderPass(m_device->device(), &rpci, nullptr, &rp);
     m_errorMonitor->VerifyFound();
@@ -4921,7 +4924,8 @@ TEST_F(VkLayerTest, RenderPassCreateAttachmentsMisc) {
         if (err == VK_SUCCESS) vkDestroyRenderPass(m_device->device(), rp, nullptr);
     }
     attachments[subpass.pColorAttachments[0].attachment].samples = VK_SAMPLE_COUNT_4_BIT;
-    attachments[subpass.pColorAttachments[1].attachment].samples = VK_SAMPLE_COUNT_4_BIT;
+    subpass.colorAttachmentCount = (uint32_t)color.size();  // avoid mismatch (00337), and avoid double report
+    subpass.pDepthStencilAttachment = &depth;
     // Test resolve to a multi-sampled resolve attachment
     attachments[subpass.pResolveAttachments[0].attachment].samples = VK_SAMPLE_COUNT_4_BIT;
     m_errorMonitor->SetDesiredFailureMsg(VK_DEBUG_REPORT_ERROR_BIT_EXT, "VUID-VkSubpassDescription-pResolveAttachments-00849");
@@ -5308,6 +5312,8 @@ TEST_F(VkLayerTest, RenderPassCreateInvalidInputAttachmentReferences) {
 
     // Invalid meta data aspect
     m_errorMonitor->SetDesiredFailureMsg(VK_DEBUG_REPORT_ERROR_BIT_EXT, "VUID-VkInputAttachmentAspectReference-aspectMask-01964");
+    m_errorMonitor->SetDesiredFailureMsg(
+        VK_DEBUG_REPORT_ERROR_BIT_EXT, "VUID-VkRenderPassCreateInfo-pNext-01963");  // Cannot/should not avoid getting this one too
     err = vkCreateRenderPass(m_device->device(), &rpci, nullptr, &rp);
     if (err == VK_SUCCESS) vkDestroyRenderPass(m_device->device(), rp, nullptr);
     m_errorMonitor->VerifyFound();
