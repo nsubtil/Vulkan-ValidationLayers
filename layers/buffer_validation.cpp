@@ -327,7 +327,7 @@ bool ValidateRenderPassLayoutAgainstFramebufferImageUsage(layer_data *device_dat
     const auto report_data = core_validation::GetReportData(device_data);
     auto image_state = GetImageState(device_data, image);
     const char *vuid;
-    bool use_rp2 = (rp_version == RENDER_PASS_VERSION_2);
+    const bool use_rp2 = (rp_version == RENDER_PASS_VERSION_2);
 
     if (!image_state) {
         skip |= log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_EXT, HandleToUint64(image),
@@ -537,7 +537,7 @@ bool VerifyFramebufferAndRenderPassLayouts(layer_data *device_data, RenderPassCr
 }
 
 void TransitionAttachmentRefLayout(layer_data *device_data, GLOBAL_CB_NODE *pCB, FRAMEBUFFER_STATE *pFramebuffer,
-                                   safe_VkAttachmentReference2KHR ref) {
+                                   const safe_VkAttachmentReference2KHR &ref) {
     if (ref.attachment != VK_ATTACHMENT_UNUSED) {
         auto image_view = GetAttachmentImageViewState(device_data, pFramebuffer, ref.attachment);
         if (image_view) {
@@ -3209,7 +3209,7 @@ bool ValidateLayoutVsAttachmentDescription(const debug_report_data *report_data,
                                            const VkAttachmentDescription2KHR &attachment_description) {
     bool skip = false;
     const char *vuid;
-    bool use_rp2 = (rp_version == RENDER_PASS_VERSION_2);
+    const bool use_rp2 = (rp_version == RENDER_PASS_VERSION_2);
 
     // Verify that initial loadOp on READ_ONLY attachments is not CLEAR
     if (attachment_description.loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) {
@@ -3247,8 +3247,8 @@ bool ValidateLayouts(const core_validation::layer_data *device_data, RenderPassC
     const debug_report_data *report_data = core_validation::GetReportData(device_data);
     bool skip = false;
     const char *vuid;
-    bool use_rp2 = (rp_version == RENDER_PASS_VERSION_2);
-    const char *function_name = use_rp2 ? "vkCreateRenderPass2KHR()" : "vkCreateRenderPass()";
+    const bool use_rp2 = (rp_version == RENDER_PASS_VERSION_2);
+    const char *const function_name = use_rp2 ? "vkCreateRenderPass2KHR()" : "vkCreateRenderPass()";
 
     for (uint32_t i = 0; i < pCreateInfo->attachmentCount; ++i) {
         VkFormat format = pCreateInfo->pAttachments[i].format;

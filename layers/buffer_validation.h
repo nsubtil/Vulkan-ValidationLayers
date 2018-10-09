@@ -107,7 +107,7 @@ bool VerifyFramebufferAndRenderPassLayouts(layer_data *dev_data, RenderPassCreat
                                            const FRAMEBUFFER_STATE *framebuffer_state);
 
 void TransitionAttachmentRefLayout(layer_data *dev_data, GLOBAL_CB_NODE *pCB, FRAMEBUFFER_STATE *pFramebuffer,
-                                   safe_VkAttachmentReference2KHR ref);
+                                   const safe_VkAttachmentReference2KHR &ref);
 
 void TransitionSubpassLayouts(layer_data *, GLOBAL_CB_NODE *, const RENDER_PASS_STATE *, const int, FRAMEBUFFER_STATE *);
 

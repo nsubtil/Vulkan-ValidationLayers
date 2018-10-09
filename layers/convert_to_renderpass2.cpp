@@ -24,13 +24,88 @@
 #include "vk_typemap_helper.h"
 #include "vk_format_utils.h"
 
-void ConvertVkAttachmentDescriptionToV2KHR(const VkAttachmentDescription* in_struct, safe_VkAttachmentDescription2KHR* out_struct);
+static void ConvertVkAttachmentReferenceToV2KHR(const VkAttachmentReference* in_struct,
+                                                safe_VkAttachmentReference2KHR* out_struct) {
+    out_struct->sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2_KHR;
+    out_struct->pNext = nullptr;
+    out_struct->attachment = in_struct->attachment;
+    out_struct->layout = in_struct->layout;
+    out_struct->aspectMask =
+        VK_IMAGE_ASPECT_FLAG_BITS_MAX_ENUM;  // Uninitialized - must be filled in by top level struct for input attachments
+}
 
-void ConvertVkSubpassDescriptionToV2KHR(const VkSubpassDescription* in_struct, safe_VkSubpassDescription2KHR* out_struct);
+static void ConvertVkSubpassDependencyToV2KHR(const VkSubpassDependency* in_struct, safe_VkSubpassDependency2KHR* out_struct) {
+    out_struct->sType = VK_STRUCTURE_TYPE_SUBPASS_DEPENDENCY_2_KHR;
+    out_struct->pNext = nullptr;
+    out_struct->srcSubpass = in_struct->srcSubpass;
+    out_struct->dstSubpass = in_struct->dstSubpass;
+    out_struct->srcStageMask = in_struct->srcStageMask;
+    out_struct->dstStageMask = in_struct->dstStageMask;
+    out_struct->srcAccessMask = in_struct->srcAccessMask;
+    out_struct->dstAccessMask = in_struct->dstAccessMask;
+    out_struct->dependencyFlags = in_struct->dependencyFlags;
+    out_struct->viewOffset = 0;
+}
 
-void ConvertVkSubpassDependencyToV2KHR(const VkSubpassDependency* in_struct, safe_VkSubpassDependency2KHR* out_struct);
+static void ConvertVkSubpassDescriptionToV2KHR(const VkSubpassDescription* in_struct, safe_VkSubpassDescription2KHR* out_struct) {
+    out_struct->sType = VK_STRUCTURE_TYPE_SUBPASS_DESCRIPTION_2_KHR;
+    out_struct->pNext = nullptr;
+    out_struct->flags = in_struct->flags;
+    out_struct->pipelineBindPoint = in_struct->pipelineBindPoint;
+    out_struct->viewMask = 0;
+    out_struct->inputAttachmentCount = in_struct->inputAttachmentCount;
+    out_struct->pInputAttachments = nullptr;
+    out_struct->colorAttachmentCount = in_struct->colorAttachmentCount;
+    out_struct->pColorAttachments = nullptr;
+    out_struct->pResolveAttachments = nullptr;
+    out_struct->preserveAttachmentCount = in_struct->preserveAttachmentCount;
+    out_struct->pPreserveAttachments = nullptr;
 
-void ConvertVkAttachmentReferenceToV2KHR(const VkAttachmentReference* in_struct, safe_VkAttachmentReference2KHR* out_struct);
+    if (out_struct->inputAttachmentCount && in_struct->pInputAttachments) {
+        out_struct->pInputAttachments = new safe_VkAttachmentReference2KHR[out_struct->inputAttachmentCount];
+        for (uint32_t i = 0; i < out_struct->inputAttachmentCount; ++i) {
+            ConvertVkAttachmentReferenceToV2KHR(&in_struct->pInputAttachments[i], &out_struct->pInputAttachments[i]);
+        }
+    }
+    if (out_struct->colorAttachmentCount && in_struct->pColorAttachments) {
+        out_struct->pColorAttachments = new safe_VkAttachmentReference2KHR[out_struct->colorAttachmentCount];
+        for (uint32_t i = 0; i < out_struct->colorAttachmentCount; ++i) {
+            ConvertVkAttachmentReferenceToV2KHR(&in_struct->pColorAttachments[i], &out_struct->pColorAttachments[i]);
+        }
+    }
+    if (out_struct->colorAttachmentCount && in_struct->pResolveAttachments) {
+        out_struct->pResolveAttachments = new safe_VkAttachmentReference2KHR[out_struct->colorAttachmentCount];
+        for (uint32_t i = 0; i < out_struct->colorAttachmentCount; ++i) {
+            ConvertVkAttachmentReferenceToV2KHR(&in_struct->pResolveAttachments[i], &out_struct->pResolveAttachments[i]);
+        }
+    }
+    if (in_struct->pDepthStencilAttachment) {
+        out_struct->pDepthStencilAttachment = new safe_VkAttachmentReference2KHR();
+        ConvertVkAttachmentReferenceToV2KHR(in_struct->pDepthStencilAttachment, out_struct->pDepthStencilAttachment);
+    } else {
+        out_struct->pDepthStencilAttachment = NULL;
+    }
+    if (in_struct->pPreserveAttachments) {
+        out_struct->pPreserveAttachments = new uint32_t[in_struct->preserveAttachmentCount];
+        memcpy((void*)out_struct->pPreserveAttachments, (void*)in_struct->pPreserveAttachments,
+               sizeof(uint32_t) * in_struct->preserveAttachmentCount);
+    }
+}
+
+static void ConvertVkAttachmentDescriptionToV2KHR(const VkAttachmentDescription* in_struct,
+                                                  safe_VkAttachmentDescription2KHR* out_struct) {
+    out_struct->sType = VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_2_KHR;
+    out_struct->pNext = nullptr;
+    out_struct->flags = in_struct->flags;
+    out_struct->format = in_struct->format;
+    out_struct->samples = in_struct->samples;
+    out_struct->loadOp = in_struct->loadOp;
+    out_struct->storeOp = in_struct->storeOp;
+    out_struct->stencilLoadOp = in_struct->stencilLoadOp;
+    out_struct->stencilStoreOp = in_struct->stencilStoreOp;
+    out_struct->initialLayout = in_struct->initialLayout;
+    out_struct->finalLayout = in_struct->finalLayout;
+}
 
 void ConvertVkRenderPassCreateInfoToV2KHR(const VkRenderPassCreateInfo* in_struct, safe_VkRenderPassCreateInfo2KHR* out_struct) {
     out_struct->sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO_2_KHR;
@@ -124,85 +199,4 @@ void ConvertVkRenderPassCreateInfoToV2KHR(const VkRenderPassCreateInfo* in_struc
             }
         }
     }
-}
-
-void ConvertVkAttachmentDescriptionToV2KHR(const VkAttachmentDescription* in_struct, safe_VkAttachmentDescription2KHR* out_struct) {
-    out_struct->sType = VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_2_KHR;
-    out_struct->pNext = nullptr;
-    out_struct->flags = in_struct->flags;
-    out_struct->format = in_struct->format;
-    out_struct->samples = in_struct->samples;
-    out_struct->loadOp = in_struct->loadOp;
-    out_struct->storeOp = in_struct->storeOp;
-    out_struct->stencilLoadOp = in_struct->stencilLoadOp;
-    out_struct->stencilStoreOp = in_struct->stencilStoreOp;
-    out_struct->initialLayout = in_struct->initialLayout;
-    out_struct->finalLayout = in_struct->finalLayout;
-}
-
-void ConvertVkSubpassDescriptionToV2KHR(const VkSubpassDescription* in_struct, safe_VkSubpassDescription2KHR* out_struct) {
-    out_struct->sType = VK_STRUCTURE_TYPE_SUBPASS_DESCRIPTION_2_KHR;
-    out_struct->pNext = nullptr;
-    out_struct->flags = in_struct->flags;
-    out_struct->pipelineBindPoint = in_struct->pipelineBindPoint;
-    out_struct->viewMask = 0;
-    out_struct->inputAttachmentCount = in_struct->inputAttachmentCount;
-    out_struct->pInputAttachments = nullptr;
-    out_struct->colorAttachmentCount = in_struct->colorAttachmentCount;
-    out_struct->pColorAttachments = nullptr;
-    out_struct->pResolveAttachments = nullptr;
-    out_struct->preserveAttachmentCount = in_struct->preserveAttachmentCount;
-    out_struct->pPreserveAttachments = nullptr;
-
-    if (out_struct->inputAttachmentCount && in_struct->pInputAttachments) {
-        out_struct->pInputAttachments = new safe_VkAttachmentReference2KHR[out_struct->inputAttachmentCount];
-        for (uint32_t i = 0; i < out_struct->inputAttachmentCount; ++i) {
-            ConvertVkAttachmentReferenceToV2KHR(&in_struct->pInputAttachments[i], &out_struct->pInputAttachments[i]);
-        }
-    }
-    if (out_struct->colorAttachmentCount && in_struct->pColorAttachments) {
-        out_struct->pColorAttachments = new safe_VkAttachmentReference2KHR[out_struct->colorAttachmentCount];
-        for (uint32_t i = 0; i < out_struct->colorAttachmentCount; ++i) {
-            ConvertVkAttachmentReferenceToV2KHR(&in_struct->pColorAttachments[i], &out_struct->pColorAttachments[i]);
-        }
-    }
-    if (out_struct->colorAttachmentCount && in_struct->pResolveAttachments) {
-        out_struct->pResolveAttachments = new safe_VkAttachmentReference2KHR[out_struct->colorAttachmentCount];
-        for (uint32_t i = 0; i < out_struct->colorAttachmentCount; ++i) {
-            ConvertVkAttachmentReferenceToV2KHR(&in_struct->pResolveAttachments[i], &out_struct->pResolveAttachments[i]);
-        }
-    }
-    if (in_struct->pDepthStencilAttachment) {
-        out_struct->pDepthStencilAttachment = new safe_VkAttachmentReference2KHR();
-        ConvertVkAttachmentReferenceToV2KHR(in_struct->pDepthStencilAttachment, out_struct->pDepthStencilAttachment);
-    } else {
-        out_struct->pDepthStencilAttachment = NULL;
-    }
-    if (in_struct->pPreserveAttachments) {
-        out_struct->pPreserveAttachments = new uint32_t[in_struct->preserveAttachmentCount];
-        memcpy((void*)out_struct->pPreserveAttachments, (void*)in_struct->pPreserveAttachments,
-               sizeof(uint32_t) * in_struct->preserveAttachmentCount);
-    }
-}
-
-void ConvertVkSubpassDependencyToV2KHR(const VkSubpassDependency* in_struct, safe_VkSubpassDependency2KHR* out_struct) {
-    out_struct->sType = VK_STRUCTURE_TYPE_SUBPASS_DEPENDENCY_2_KHR;
-    out_struct->pNext = nullptr;
-    out_struct->srcSubpass = in_struct->srcSubpass;
-    out_struct->dstSubpass = in_struct->dstSubpass;
-    out_struct->srcStageMask = in_struct->srcStageMask;
-    out_struct->dstStageMask = in_struct->dstStageMask;
-    out_struct->srcAccessMask = in_struct->srcAccessMask;
-    out_struct->dstAccessMask = in_struct->dstAccessMask;
-    out_struct->dependencyFlags = in_struct->dependencyFlags;
-    out_struct->viewOffset = 0;
-}
-
-void ConvertVkAttachmentReferenceToV2KHR(const VkAttachmentReference* in_struct, safe_VkAttachmentReference2KHR* out_struct) {
-    out_struct->sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2_KHR;
-    out_struct->pNext = nullptr;
-    out_struct->attachment = in_struct->attachment;
-    out_struct->layout = in_struct->layout;
-    out_struct->aspectMask =
-        VK_IMAGE_ASPECT_FLAG_BITS_MAX_ENUM;  // Uninitialized - must be filled in by top level struct for input attachments
 }
