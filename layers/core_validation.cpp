@@ -10542,12 +10542,8 @@ static bool PreCallValidateCreateRenderPass(const layer_data *dev_data, VkDevice
     }
 
     if (!skip) {
-        safe_VkRenderPassCreateInfo2KHR convertedCreateInfo;
-        ConvertVkRenderPassCreateInfoToV2KHR(pCreateInfo, &convertedCreateInfo);
-
-        skip |= ValidateCreateRenderPass(dev_data, device, RENDER_PASS_VERSION_1, convertedCreateInfo.ptr(), render_pass);
+        skip |= ValidateCreateRenderPass(dev_data, device, RENDER_PASS_VERSION_1, render_pass->createInfo.ptr(), render_pass);
     }
-
     return skip;
 }
 
@@ -10555,9 +10551,10 @@ static bool PreCallValidateCreateRenderPass(const layer_data *dev_data, VkDevice
 // Use of rvalue reference exceeds reccommended usage of rvalue refs in google style guide, but intentionally forces caller to move
 // or copy.  This is clearer than passing a pointer to shared_ptr and avoids the atomic increment/decrement of shared_ptr copy
 // construction or assignment.
-static void RecordCreateRenderPass(layer_data *dev_data, const VkRenderPassCreateInfo2KHR *pCreateInfo,
-                                   const VkRenderPass render_pass_handle, std::shared_ptr<RENDER_PASS_STATE> &&render_pass) {
+static void PostCallRecordCreateRenderPass(layer_data *dev_data, const VkRenderPass render_pass_handle,
+                                           std::shared_ptr<RENDER_PASS_STATE> &&render_pass) {
     render_pass->renderPass = render_pass_handle;
+    auto pCreateInfo = render_pass->createInfo.ptr();
     for (uint32_t i = 0; i < pCreateInfo->subpassCount; ++i) {
         const VkSubpassDescription2KHR &subpass = pCreateInfo->pSubpasses[i];
         for (uint32_t j = 0; j < subpass.colorAttachmentCount; ++j) {
@@ -10578,14 +10575,6 @@ static void RecordCreateRenderPass(layer_data *dev_data, const VkRenderPassCreat
 
     // Even though render_pass is an rvalue-ref parameter, still must move s.t. move assignment is invoked.
     dev_data->renderPassMap[render_pass_handle] = std::move(render_pass);
-}
-
-static void PostCallRecordCreateRenderPass(layer_data *dev_data, const VkRenderPassCreateInfo *pCreateInfo,
-                                           const VkRenderPass render_pass_handle,
-                                           std::shared_ptr<RENDER_PASS_STATE> &&render_pass) {
-    safe_VkRenderPassCreateInfo2KHR convertedCreateInfo;
-    ConvertVkRenderPassCreateInfoToV2KHR(pCreateInfo, &convertedCreateInfo);
-    RecordCreateRenderPass(dev_data, convertedCreateInfo.ptr(), render_pass_handle, std::move(render_pass));
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL CreateRenderPass(VkDevice device, const VkRenderPassCreateInfo *pCreateInfo,
@@ -10609,7 +10598,7 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateRenderPass(VkDevice device, const VkRenderP
 
     if (VK_SUCCESS == result) {
         lock.lock();
-        PostCallRecordCreateRenderPass(dev_data, pCreateInfo, *pRenderPass, std::move(render_pass));
+        PostCallRecordCreateRenderPass(dev_data, *pRenderPass, std::move(render_pass));
     }
     return result;
 }
@@ -10617,12 +10606,6 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateRenderPass(VkDevice device, const VkRenderP
 static bool PreCallValidateCreateRenderPass2KHR(const layer_data *dev_data, VkDevice device,
                                                 const VkRenderPassCreateInfo2KHR *pCreateInfo, RENDER_PASS_STATE *render_pass) {
     return ValidateCreateRenderPass(dev_data, device, RENDER_PASS_VERSION_2, pCreateInfo, render_pass);
-}
-
-static void PostCallRecordCreateRenderPass2KHR(layer_data *dev_data, const VkRenderPassCreateInfo2KHR *pCreateInfo,
-                                               const VkRenderPass render_pass_handle,
-                                               std::shared_ptr<RENDER_PASS_STATE> &&render_pass) {
-    RecordCreateRenderPass(dev_data, pCreateInfo, render_pass_handle, std::move(render_pass));
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL CreateRenderPass2KHR(VkDevice device, const VkRenderPassCreateInfo2KHR *pCreateInfo,
@@ -10646,7 +10629,7 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateRenderPass2KHR(VkDevice device, const VkRen
 
     if (VK_SUCCESS == result) {
         lock.lock();
-        PostCallRecordCreateRenderPass2KHR(dev_data, pCreateInfo, *pRenderPass, std::move(render_pass));
+        PostCallRecordCreateRenderPass(dev_data, *pRenderPass, std::move(render_pass));
     }
     return result;
 }
